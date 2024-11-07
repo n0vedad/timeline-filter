@@ -12,7 +12,8 @@ The following environment variables are used:
 * `EXTERNAL_BASE` - The hostname of the feed generator.
 * `DATABASE_URL` - The URL of the database to use.
 * `JETSTREAM_HOSTNAME` - The hostname of the JetStream server to consume events from.
-* `ZSTD_DICTIONARY` - The path to the ZSTD dictionary to use.
+* `COMPRESSION` - Use zstd compression. Default `false`.
+* `ZSTD_DICTIONARY` - The path to the ZSTD dictionary to use. Required when compression is enabled.
 * `CONSUMER_TASK_ENABLE` - Whether or not to enable the consumer tasks. Default `true`.
 * `VMC_TASK_ENABLE` - Whether or not to enable the VMC (verification method cache) tasks. Default `true`.
 * `PLC_HOSTNAME` - The hostname of the PLC server to use for VMC tasks. Default `plc.directory`.

@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 use http::HeaderValue;
@@ -22,6 +22,7 @@ const MAX_MESSAGE_SIZE: usize = 25000;
 #[derive(Clone)]
 pub struct ConsumerTaskConfig {
     pub user_agent: String,
+    pub compression: bool,
     pub zstd_dictionary_location: String,
     pub jetstream_hostname: String,
     pub feeds: config::Feeds,
@@ -56,15 +57,13 @@ impl ConsumerTask {
         let last_time_us =
             consumer_control_get(&self.pool, &self.config.jetstream_hostname).await?;
 
-        // mkdir -p data/ && curl -o data/zstd_dictionary https://github.com/bluesky-social/jetstream/raw/refs/heads/main/pkg/models/zstd_dictionary
-        let data: Vec<u8> = std::fs::read(self.config.zstd_dictionary_location.clone())
-            .context("unable to load zstd dictionary")?;
-
         let uri = Uri::from_str(&format!(
-            "wss://{}/subscribe?compress=true&requireHello=true",
-            self.config.jetstream_hostname
+            "wss://{}/subscribe?compress={}&requireHello=true",
+            self.config.jetstream_hostname, self.config.compression
         ))
         .context("invalid jetstream URL")?;
+
+        tracing::debug!(uri = ?uri, "connecting to jetstream");
 
         let (mut client, _) = ClientBuilder::from_uri(uri)
             .add_header(
@@ -89,8 +88,16 @@ impl ConsumerTask {
             .await
             .map_err(|err| anyhow::Error::msg(err).context("cannot send update"))?;
 
-        let mut decompressor = zstd::bulk::Decompressor::with_dictionary(&data)
-            .map_err(|err| anyhow::Error::msg(err).context("cannot create decompressor"))?;
+        let mut decompressor = if self.config.compression {
+            // mkdir -p data/ && curl -o data/zstd_dictionary https://github.com/bluesky-social/jetstream/raw/refs/heads/main/pkg/models/zstd_dictionary
+            let data: Vec<u8> = std::fs::read(self.config.zstd_dictionary_location.clone())
+                .context("unable to load zstd dictionary")?;
+            zstd::bulk::Decompressor::with_dictionary(&data)
+                .map_err(|err| anyhow::Error::msg(err).context("cannot create decompressor"))?
+        } else {
+            zstd::bulk::Decompressor::new()
+                .map_err(|err| anyhow::Error::msg(err).context("cannot create decompressor"))?
+        };
 
         let interval = std::time::Duration::from_secs(120);
         let sleeper = sleep(interval);
@@ -120,28 +127,29 @@ impl ConsumerTask {
                     }
                     let item = item.unwrap();
 
-                    if !item.is_binary() {
-                        tracing::warn!("message from jetstream is not binary");
-                        continue;
-                    }
-                    let payload = item.into_payload();
+                    let event = if self.config.compression {
+                        if !item.is_binary() {
+                            tracing::debug!("compression enabled but message from jetstream is not binary");
+                            continue;
+                        }
+                        let payload = item.into_payload();
 
-                    let decoded = decompressor.decompress(&payload, MAX_MESSAGE_SIZE * 3);
-                    if let Err(err) = decoded {
-                        let length = payload.len();
-                        tracing::error!(error = ?err, length = ?length, "error processing jetstream message");
-                        continue;
-                    }
-                    let decoded = decoded.unwrap();
-
-                    let event = serde_json::from_slice::<model::Event>(&decoded);
+                        let decoded = decompressor.decompress(&payload, MAX_MESSAGE_SIZE * 3);
+                        if let Err(err) = decoded {
+                            tracing::debug!(err = ?err, "cannot decompress message");
+                            continue;
+                        }
+                        let decoded = decoded.unwrap();
+                        serde_json::from_slice::<model::Event>(&decoded)
+                    } else {
+                        if !item.is_text() {
+                            tracing::debug!("compression enabled but message from jetstream is not binary");
+                            continue;
+                        }
+                        serde_json::from_str(item.as_text().ok_or(anyhow!("cannot convert message to text"))?)
+                    };
                     if let Err(err) = event {
                         tracing::error!(error = ?err, "error processing jetstream message");
-
-                        #[cfg(debug_assertions)]
-                        {
-                            println!("{:?}", std::str::from_utf8(&decoded));
-                        }
 
                         continue;
                     }
@@ -159,6 +167,8 @@ impl ConsumerTask {
                         continue;
                     }
                     let event_value = event_value.unwrap();
+
+                    tracing::trace!(event = ?event, "received event");
 
                     for feed_matcher in self.feed_matchers.0.iter() {
                         if feed_matcher.matches(&event_value) {

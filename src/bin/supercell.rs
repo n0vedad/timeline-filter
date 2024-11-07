@@ -102,6 +102,7 @@ async fn main() -> Result<()> {
         if task_enable {
             let consumer_task_config = ConsumerTaskConfig {
                 user_agent: inner_config.user_agent.clone(),
+                compression: *inner_config.compression.as_ref(),
                 zstd_dictionary_location: inner_config.zstd_dictionary.clone(),
                 jetstream_hostname: inner_config.jetstream_hostname.clone(),
                 feeds: inner_config.feeds.clone(),

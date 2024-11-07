@@ -4,9 +4,10 @@ export HTTP_PORT=4050
 export EXTERNAL_BASE=feeds.smokesignal.events
 export DATABASE_URL=sqlite://development.db
 export JETSTREAM_HOSTNAME=jetstream1.us-east.bsky.network
-export ZSTD_DICTIONARY=$(pwd)/jetstream_zstd_dictionary
 export CONSUMER_TASK_ENABLE=true
 export FEEDS=$(pwd)/config.yml
+# export COMPRESSION=true
+# export ZSTD_DICTIONARY=$(pwd)/jetstream_zstd_dictionary
 
 touch development.db
 sqlx migrate run --database-url sqlite://development.db

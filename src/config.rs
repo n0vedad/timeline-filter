@@ -46,6 +46,9 @@ pub struct CertificateBundles(Vec<String>);
 pub struct TaskEnable(bool);
 
 #[derive(Clone)]
+pub struct Compression(bool);
+
+#[derive(Clone)]
 pub struct Config {
     pub version: String,
     pub http_port: HttpPort,
@@ -59,6 +62,7 @@ pub struct Config {
     pub zstd_dictionary: String,
     pub jetstream_hostname: String,
     pub feeds: Feeds,
+    pub compression: Compression,
 }
 
 impl Config {
@@ -72,7 +76,14 @@ impl Config {
             optional_env("CERTIFICATE_BUNDLES").try_into()?;
 
         let jetstream_hostname = require_env("JETSTREAM_HOSTNAME")?;
-        let zstd_dictionary = require_env("ZSTD_DICTIONARY")?;
+
+        let compression: Compression = default_env("COMPRESSION", "false").try_into()?;
+
+        let zstd_dictionary = if compression.0 {
+            require_env("ZSTD_DICTIONARY")?
+        } else {
+            "".to_string()
+        };
 
         let consumer_task_enable: TaskEnable =
             default_env("CONSUMER_TASK_ENABLE", "true").try_into()?;
@@ -103,6 +114,7 @@ impl Config {
             jetstream_hostname,
             zstd_dictionary,
             feeds,
+            compression,
         })
     }
 }
@@ -181,6 +193,22 @@ impl TryFrom<String> for TaskEnable {
     fn try_from(value: String) -> Result<Self, Self::Error> {
         let value = value.parse::<bool>().map_err(|err| {
             anyhow::Error::new(err).context(anyhow!("parsing task enable into bool failed"))
+        })?;
+        Ok(Self(value))
+    }
+}
+
+impl AsRef<bool> for Compression {
+    fn as_ref(&self) -> &bool {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for Compression {
+    type Error = anyhow::Error;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let value = value.parse::<bool>().map_err(|err| {
+            anyhow::Error::new(err).context(anyhow!("parsing compression into bool failed"))
         })?;
         Ok(Self(value))
     }
