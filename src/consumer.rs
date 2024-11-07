@@ -26,6 +26,7 @@ pub struct ConsumerTaskConfig {
     pub zstd_dictionary_location: String,
     pub jetstream_hostname: String,
     pub feeds: config::Feeds,
+    pub collections: Vec<String>,
 }
 
 pub struct ConsumerTask {
@@ -75,7 +76,7 @@ impl ConsumerTask {
             .map_err(|err| anyhow::Error::new(err).context("cannot connect to jetstream"))?;
 
         let update = model::SubscriberSourcedMessage::Update {
-            wanted_collections: vec!["app.bsky.feed.post".to_string()],
+            wanted_collections: self.config.collections.clone(),
             wanted_dids: vec![],
             max_message_size_bytes: MAX_MESSAGE_SIZE as u64,
             cursor: last_time_us,
@@ -168,17 +169,14 @@ impl ConsumerTask {
                     }
                     let event_value = event_value.unwrap();
 
-                    tracing::trace!(event = ?event, "received event");
-
                     for feed_matcher in self.feed_matchers.0.iter() {
                         if feed_matcher.matches(&event_value) {
                             tracing::debug!(feed_id = ?feed_matcher.feed, "matched event");
-                            if let Some((uri, cid)) = model::to_post_strong_ref(&event) {
+                            if let Some(uri) = model::to_post_strong_ref(feed_matcher.aturi.as_ref(), &event, &event_value) {
                                 let feed_content = storage::model::FeedContent{
                                     feed_id: feed_matcher.feed.clone(),
                                     uri,
                                     indexed_at: event.clone().time_us,
-                                    cid,
                                 };
                                 feed_content_insert(&self.pool, &feed_content).await?;
                             }
@@ -199,6 +197,7 @@ pub(crate) mod model {
     use std::collections::HashMap;
 
     use serde::{Deserialize, Serialize};
+    use serde_json_path::JsonPath;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(tag = "type", content = "payload")]
@@ -240,12 +239,11 @@ pub(crate) mod model {
     pub(crate) enum Record {
         #[serde(rename = "app.bsky.feed.post")]
         Post {
-            text: String,
-
-            facets: Option<Vec<Facet>>,
-
-            reply: Option<Reply>,
-
+            #[serde(flatten)]
+            extra: HashMap<String, serde_json::Value>,
+        },
+        #[serde(rename = "app.bsky.feed.like")]
+        Like {
             #[serde(flatten)]
             extra: HashMap<String, serde_json::Value>,
         },
@@ -292,16 +290,37 @@ pub(crate) mod model {
         pub(crate) commit: Option<CommitOp>,
     }
 
-    pub(crate) fn to_post_strong_ref(event: &Event) -> Option<(String, String)> {
+    pub(crate) fn to_post_strong_ref(
+        aturi: Option<&JsonPath>,
+        event: &Event,
+        event_value: &serde_json::Value,
+    ) -> Option<String> {
         if let Some(CommitOp::Create {
-            collection,
-            rkey,
-            cid,
-            ..
+            collection, rkey, ..
         }) = &event.commit
         {
+            if let Some(aturi_path) = aturi {
+                let nodes = aturi_path.query(event_value).all();
+                let string_nodes = nodes
+                    .iter()
+                    .filter_map(|value| {
+                        if let serde_json::Value::String(actual) = value {
+                            Some(actual.to_lowercase().clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<String>>();
+
+                for value in string_nodes {
+                    if value.starts_with("at://") {
+                        return Some(value);
+                    }
+                }
+            }
+
             let uri = format!("at://{}/{}/{}", event.did, collection, rkey);
-            return Some((uri, cid.clone()));
+            return Some(uri);
         }
         None
     }

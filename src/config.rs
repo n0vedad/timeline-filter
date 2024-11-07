@@ -15,6 +15,9 @@ pub struct Feed {
     pub description: String,
 
     #[serde(default)]
+    pub aturi: Option<String>,
+
+    #[serde(default)]
     pub allow: HashSet<String>,
 
     #[serde(default)]
@@ -49,6 +52,9 @@ pub struct TaskEnable(bool);
 pub struct Compression(bool);
 
 #[derive(Clone)]
+pub struct Collections(Vec<String>);
+
+#[derive(Clone)]
 pub struct Config {
     pub version: String,
     pub http_port: HttpPort,
@@ -63,6 +69,7 @@ pub struct Config {
     pub jetstream_hostname: String,
     pub feeds: Feeds,
     pub compression: Compression,
+    pub collections: Collections,
 }
 
 impl Config {
@@ -101,6 +108,9 @@ impl Config {
 
         let feeds: Feeds = require_env("FEEDS")?.try_into()?;
 
+        let collections: Collections =
+            default_env("COLLECTIONS", "app.bsky.feed.post").try_into()?;
+
         Ok(Self {
             version: version()?,
             http_port,
@@ -115,6 +125,7 @@ impl Config {
             zstd_dictionary,
             feeds,
             compression,
+            collections,
         })
     }
 }
@@ -224,5 +235,29 @@ impl TryFrom<String> for Feeds {
         serde_yaml::from_slice(&content).map_err(|err| {
             anyhow::Error::new(err).context(anyhow!("parsing feeds into Feeds failed"))
         })
+    }
+}
+
+impl TryFrom<String> for Collections {
+    type Error = anyhow::Error;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(Self(
+            value
+                .split(',')
+                .filter_map(|s| {
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.to_string())
+                    }
+                })
+                .collect::<Vec<String>>(),
+        ))
+    }
+}
+
+impl AsRef<Vec<String>> for Collections {
+    fn as_ref(&self) -> &Vec<String> {
+        &self.0
     }
 }

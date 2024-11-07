@@ -6,6 +6,7 @@ export DATABASE_URL=sqlite://development.db
 export JETSTREAM_HOSTNAME=jetstream1.us-east.bsky.network
 export CONSUMER_TASK_ENABLE=true
 export FEEDS=$(pwd)/config.yml
+export COLLECTIONS=app.bsky.feed.like,app.bsky.feed.post
 # export COMPRESSION=true
 # export ZSTD_DICTIONARY=$(pwd)/jetstream_zstd_dictionary
 

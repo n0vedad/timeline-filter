@@ -116,7 +116,7 @@ pub async fn handle_get_feed_skeleton(
     let cursor = feed_items
         .iter()
         .last()
-        .map(|last_feed_item| format!("{},{}", last_feed_item.indexed_at, last_feed_item.cid));
+        .map(|last_feed_item| last_feed_item.indexed_at.to_string());
 
     let feed_item_views = feed_items
         .iter()
@@ -209,19 +209,10 @@ async fn did_from_jwt(
     Ok(claims.iss)
 }
 
-fn parse_cursor(value: Option<String>) -> Option<(i64, String)> {
+fn parse_cursor(value: Option<String>) -> Option<i64> {
     let value = value.as_ref()?;
 
     let parts = value.split(",").collect::<Vec<&str>>();
-    if parts.len() != 2 {
-        return None;
-    }
 
-    let time_us = parts[0].parse::<i64>();
-    if time_us.is_err() {
-        return None;
-    }
-    let time_us = time_us.unwrap();
-
-    Some((time_us, parts[1].to_string()))
+    parts.first().and_then(|value| value.parse::<i64>().ok())
 }

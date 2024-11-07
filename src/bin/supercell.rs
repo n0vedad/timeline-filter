@@ -106,6 +106,7 @@ async fn main() -> Result<()> {
                 zstd_dictionary_location: inner_config.zstd_dictionary.clone(),
                 jetstream_hostname: inner_config.jetstream_hostname.clone(),
                 feeds: inner_config.feeds.clone(),
+                collections: inner_config.collections.as_ref().clone(),
             };
             let task = ConsumerTask::new(pool.clone(), consumer_task_config, token.clone())?;
             let inner_token = token.clone();

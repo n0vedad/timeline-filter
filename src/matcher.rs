@@ -9,6 +9,7 @@ pub trait Matcher: Sync + Send {
 
 pub struct FeedMatcher {
     pub(crate) feed: String,
+    pub(crate) aturi: Option<serde_json_path::JsonPath>,
     matchers: Vec<Box<dyn Matcher>>,
 }
 
@@ -20,6 +21,11 @@ impl FeedMatchers {
 
         for config_feed in config_feeds.feeds.iter() {
             let feed = config_feed.uri.clone();
+
+            let aturi = config_feed
+                .aturi
+                .as_ref()
+                .and_then(|value| JsonPath::parse(value).ok());
 
             let mut matchers = vec![];
 
@@ -39,7 +45,11 @@ impl FeedMatchers {
                 }
             }
 
-            feed_matchers.push(FeedMatcher { feed, matchers });
+            feed_matchers.push(FeedMatcher {
+                feed,
+                aturi,
+                matchers,
+            });
         }
 
         Ok(Self(feed_matchers))
