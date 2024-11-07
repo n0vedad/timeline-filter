@@ -18,6 +18,7 @@ The following environment variables are used:
 * `VMC_TASK_ENABLE` - Whether or not to enable the VMC (verification method cache) tasks. Default `true`.
 * `PLC_HOSTNAME` - The hostname of the PLC server to use for VMC tasks. Default `plc.directory`.
 * `FEEDS` - The path to the feeds configuration file.
+* `COLLECTIONS` - The collections to consume. Default `app.bsky.feed.post`.
 * `RUST_LOG` - Logging configuration. Defaults to `supercell=debug,info`
 
 The feed configuration file is a YAML file that contains the feeds to serve and how to match events to the feed. It supports a variable number of matchers with different rules. Matching is done in order and uses json path plus the matcher implementation.
