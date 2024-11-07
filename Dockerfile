@@ -26,6 +26,10 @@ EOF
 
 FROM debian:bookworm-slim
 
+LABEL org.opencontainers.image.source="https://github.com/astrenoxcoop/supercell"
+LABEL org.opencontainers.image.description="A lightweight and configurable atproto feed generator."
+LABEL org.opencontainers.image.licenses=MIT
+
 RUN set -x \
     && apt-get update \
     && apt-get install ca-certificates -y
