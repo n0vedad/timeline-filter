@@ -126,7 +126,7 @@ impl ConsumerTask {
                     }
                     let payload = item.into_payload();
 
-                    let decoded = decompressor.decompress(&payload, MAX_MESSAGE_SIZE + 1);
+                    let decoded = decompressor.decompress(&payload, MAX_MESSAGE_SIZE * 3);
                     if let Err(err) = decoded {
                         let length = payload.len();
                         tracing::error!(error = ?err, length = ?length, "error processing jetstream message");
