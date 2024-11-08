@@ -69,7 +69,7 @@ pub async fn handle_get_feed_skeleton(
         let did = did_from_jwt(&web_context.pool, &web_context.external_base, authorization).await;
 
         if let Err(err) = did {
-            tracing::error!(error = ?err, "failed to validate JWT");
+            tracing::info!(error = ?err, "failed to validate JWT");
             return Ok(Json(FeedItemsView {
                 cursor: None,
                 feed: feed_control
