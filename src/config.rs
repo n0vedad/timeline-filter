@@ -37,6 +37,9 @@ pub enum Matcher {
 
     #[serde(rename = "sequence")]
     Sequence { path: String, values: Vec<String> },
+
+    #[serde(rename = "rhai")]
+    Rhai { script: String },
 }
 
 #[derive(Clone)]

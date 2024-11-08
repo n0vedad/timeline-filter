@@ -1,10 +1,47 @@
 use anyhow::{Context, Result};
+
+#[cfg(not(feature = "rhai"))]
+use anyhow::anyhow;
+
 use serde_json_path::JsonPath;
 
 use crate::config;
 
 pub trait Matcher: Sync + Send {
     fn matches(&self, value: &serde_json::Value) -> bool;
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct MatcherResult {
+    pub matched: bool,
+    pub aturi: String,
+    pub score: i64,
+}
+
+impl MatcherResult {
+    fn get_matched(&mut self) -> bool {
+        self.matched
+    }
+
+    fn set_matched(&mut self, value: bool) {
+        self.matched = value;
+    }
+
+    fn get_aturi(&mut self) -> String {
+        self.aturi.clone()
+    }
+
+    fn set_aturi(&mut self, value: String) {
+        self.aturi = value;
+    }
+
+    fn get_score(&mut self) -> i64 {
+        self.score
+    }
+
+    fn set_score(&mut self, value: i64) {
+        self.score = value;
+    }
 }
 
 pub struct FeedMatcher {
@@ -41,6 +78,17 @@ impl FeedMatchers {
                     }
                     config::Matcher::Sequence { path, values } => {
                         matchers.push(Box::new(SequenceMatcher::new(values, path)?) as Box<dyn Matcher>);
+                    }
+
+                    #[cfg(feature = "rhai")]
+                    config::Matcher::Rhai { script } => {
+                        matchers
+                            .push(Box::new(rhai::RhaiMatcher::new(script)?) as Box<dyn Matcher>);
+                    }
+
+                    #[cfg(not(feature = "rhai"))]
+                    config::Matcher::Rhai { .. } => {
+                        return Err(anyhow!("rhai not enabled in this build"))
                     }
                 }
             }
@@ -190,8 +238,77 @@ impl Matcher for SequenceMatcher {
     }
 }
 
+#[cfg(feature = "rhai")]
+pub mod rhai {
+
+    use super::{Matcher, MatcherResult};
+    use anyhow::{Context, Result};
+
+    use rhai::{serde::to_dynamic, Engine, Scope, AST};
+    use std::{path::PathBuf, str::FromStr};
+
+    pub struct RhaiMatcher {
+        source: String,
+        engine: Engine,
+        ast: AST,
+    }
+
+    impl RhaiMatcher {
+        pub(crate) fn new(source: &str) -> Result<Self> {
+            let mut engine = Engine::new();
+            engine
+                .register_type_with_name::<MatcherResult>("MatcherResult")
+                .register_get_set(
+                    "matched",
+                    MatcherResult::get_matched,
+                    MatcherResult::set_matched,
+                )
+                .register_get_set("score", MatcherResult::get_score, MatcherResult::set_score)
+                .register_get_set("aturi", MatcherResult::get_aturi, MatcherResult::set_aturi)
+                .register_fn("new_matcher_result", MatcherResult::default);
+            let ast = engine
+                .compile_file(PathBuf::from_str(source)?)
+                .context("cannot compile script")?;
+            Ok(Self {
+                source: source.to_string(),
+                engine,
+                ast,
+            })
+        }
+    }
+
+    impl Matcher for RhaiMatcher {
+        fn matches(&self, value: &serde_json::Value) -> bool {
+            let mut scope = Scope::new();
+            let value_map = to_dynamic(value);
+            if let Err(err) = value_map {
+                println!("error: {:?}", err);
+                tracing::error!(source = ?self.source, error = ?err, "error converting value to dynamic");
+                return false;
+            }
+            let value_map = value_map.unwrap();
+            scope.push("event", value_map);
+
+            let result = self
+                .engine
+                .eval_ast_with_scope::<MatcherResult>(&mut scope, &self.ast);
+
+            if let Err(err) = result {
+                println!("error: {:?}", err);
+                tracing::error!(source = ?self.source, error = ?err, "error evaluating script");
+                return false;
+            }
+
+            let result = result.unwrap();
+
+            result.matched
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[test]
@@ -359,5 +476,43 @@ mod tests {
             SequenceMatcher::new(&vec!["smoke".to_string(), "signal".to_string()], "$.text")
                 .expect("matcher is valid");
         assert_eq!(matcher.matches(&value), false);
+    }
+}
+
+#[cfg(all(test, feature = "rhai"))]
+mod rhaitests {
+
+    use anyhow::{anyhow, Result};
+    use super::rhai::*;
+    use super::*;
+    use std::path::PathBuf;
+
+    #[cfg(feature = "rhai")]
+    #[test]
+    fn rhai_matcher() -> Result<()> {
+        
+        let testdata = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata");
+
+        let tests = vec![
+            ("post1.json", [("rhai_match_everything.rhai", true),("rhai_match_type.rhai", true),("rhai_match_poster.rhai", true), ("rhai_match_reply_root.rhai", false)]),
+            ("post2.json", [("rhai_match_everything.rhai", true),("rhai_match_type.rhai", true),("rhai_match_poster.rhai", true), ("rhai_match_reply_root.rhai", true)])
+        ];
+
+        for (input_json, matcher_tests) in tests {
+            let input_json_path = testdata.join(input_json);
+            let json_content = std::fs::read(input_json_path).map_err(|err| {
+                anyhow::Error::new(err).context(anyhow!("reading input_json failed"))
+            })?;
+            let value: serde_json::Value = serde_json::from_slice(&json_content).context("parsing input_json failed")?;
+
+            for (matcher_file_name, expected) in matcher_tests {
+                let matcher_path = testdata.join(matcher_file_name);
+                let matcher = RhaiMatcher::new(&matcher_path.to_string_lossy()).context("could not construct matcher")?;
+                assert_eq!(matcher.matches(&value), expected);
+            }
+
+        }
+
+        Ok(())
     }
 }

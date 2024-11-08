@@ -1,0 +1,32 @@
+{
+    "did": "did:plc:cbkjy5n7bk3ax2wplmtjofq2",
+    "time_us": 1730491094829414,
+    "kind": "commit",
+    "commit": {
+        "rev": "3laadftr72k25",
+        "operation": "create",
+        "collection": "app.bsky.feed.post",
+        "rkey": "3laadftr72k25",
+        "record": {
+            "$type": "app.bsky.feed.post",
+            "createdAt": "2024-11-05T22:58:40.268Z",
+            "langs": ["en"],
+            "text": "This is also the first major public release of open source software under @astrenox.coop, a cooperative formed by @emilymobes.astrenox.coop and me. This is open source under the permissive MIT license. Contributes and suggestions are welcome.",
+            "reply": {
+              "root": {"cid": "bafyreiew6g2hjfd7c7gxnabw2uljfrcqasa335vf7g6r7r4b4laq6li2mq", "uri": "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadb7behk25"},
+              "parent": {"cid": "bafyreiew6g2hjfd7c7gxnabw2uljfrcqasa335vf7g6r7r4b4laq6li2mq", "uri": "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadb7behk25"}
+            },
+            "facets": [
+                {
+                    "features": [{"$type": "app.bsky.richtext.facet#mention", "did": "did:plc:mo344na6tbuu6nd22w4uwcty"}],
+                    "index": { "byteEnd": 88, "byteStart": 74 }
+                },
+                {
+                    "features": [{"$type": "app.bsky.richtext.facet#mention", "did": "did:plc:fjr24tyxkpi3xqenws7anfmj"}],
+                    "index": { "byteEnd": 139, "byteStart": 114 }
+                }
+            ]
+        },
+        "cid": "bafyreihyobboz2p5pgm2plenk5fqw56ujuak42ztqnsvcaibgmicxjzvri"
+    }
+}

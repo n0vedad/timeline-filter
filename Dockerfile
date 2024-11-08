@@ -11,6 +11,7 @@ WORKDIR /app/
 
 ARG GIT_HASH
 ENV GIT_HASH=$GIT_HASH
+ARG CARGO_FEATURES
 
 RUN --mount=type=bind,source=src,target=src \
     --mount=type=bind,source=migrations,target=migrations \
@@ -21,7 +22,7 @@ RUN --mount=type=bind,source=src,target=src \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
     <<EOF
 set -e
-cargo build --locked --release --bin supercell --target-dir .
+cargo build --locked --release --bin supercell --target-dir . --features "$CARGO_FEATURES"
 EOF
 
 FROM debian:bookworm-slim
