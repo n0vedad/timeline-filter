@@ -1,3 +1,11 @@
+## [0.3.1] - 2024-11-09
+
+### Changed
+
+- Cleaning up changelog
+- Adding value context to at-uri compose errors
+- Setting version to 0.3.1
+
 ## [0.3.0] - 2024-11-09
 
 ### Added
@@ -12,6 +20,13 @@
 - Updating example docker-compose configuration file
 - Setting version to 0.3.0
 - 0.3.0
+- Typo in cargo config
+- 0.3.0
+- 0.3.0
+
+### Fixed
+
+- Fixing bad build stuff
 
 ## [0.2.0] - 2024-11-07
 
@@ -54,6 +69,7 @@
 - Setting version to 0.1.1
 - 0.1.1
 
+[0.3.1]: https://github.com/astrenoxcoop/supercell/compare/0.3.0..0.3.1
 [0.3.0]: https://github.com/astrenoxcoop/supercell/compare/0.2.0..0.3.0
 [0.2.0]: https://github.com/astrenoxcoop/supercell/compare/0.1.2..0.2.0
 [0.1.2]: https://github.com/astrenoxcoop/supercell/compare/0.1.1..0.1.2
