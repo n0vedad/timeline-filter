@@ -1,21 +1,19 @@
-use anyhow::{Context, Result};
-
-#[cfg(not(feature = "rhai"))]
-use anyhow::anyhow;
+use anyhow::{anyhow, Context, Result};
 
 use serde_json_path::JsonPath;
 
 use crate::config;
 
-pub trait Matcher: Sync + Send {
-    fn matches(&self, value: &serde_json::Value) -> bool;
-}
-
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct MatcherResult {
     pub matched: bool,
     pub aturi: String,
-    pub score: i64,
+}
+
+impl PartialEq<bool> for MatcherResult {
+    fn eq(&self, other: &bool) -> bool {
+        self.matched == *other
+    }
 }
 
 impl MatcherResult {
@@ -34,19 +32,14 @@ impl MatcherResult {
     fn set_aturi(&mut self, value: String) {
         self.aturi = value;
     }
+}
 
-    fn get_score(&mut self) -> i64 {
-        self.score
-    }
-
-    fn set_score(&mut self, value: i64) {
-        self.score = value;
-    }
+pub trait Matcher: Sync + Send {
+    fn matches(&self, value: &serde_json::Value) -> Result<MatcherResult>;
 }
 
 pub struct FeedMatcher {
     pub(crate) feed: String,
-    pub(crate) aturi: Option<serde_json_path::JsonPath>,
     matchers: Vec<Box<dyn Matcher>>,
 }
 
@@ -59,25 +52,27 @@ impl FeedMatchers {
         for config_feed in config_feeds.feeds.iter() {
             let feed = config_feed.uri.clone();
 
-            let aturi = config_feed
-                .aturi
-                .as_ref()
-                .and_then(|value| JsonPath::parse(value).ok());
-
             let mut matchers = vec![];
 
             for config_feed_matcher in config_feed.matchers.iter() {
                 match config_feed_matcher {
-                    config::Matcher::Equal { path, value } => {
+                    config::Matcher::Equal { path, value, aturi } => {
                         matchers
-                            .push(Box::new(EqualsMatcher::new(value, path)?) as Box<dyn Matcher>);
+                            .push(Box::new(EqualsMatcher::new(value, path, aturi)?)
+                                as Box<dyn Matcher>);
                     }
-                    config::Matcher::Prefix { path, value } => {
+                    config::Matcher::Prefix { path, value, aturi } => {
                         matchers
-                            .push(Box::new(PrefixMatcher::new(value, path)?) as Box<dyn Matcher>);
+                            .push(Box::new(PrefixMatcher::new(value, path, aturi)?)
+                                as Box<dyn Matcher>);
                     }
-                    config::Matcher::Sequence { path, values } => {
-                        matchers.push(Box::new(SequenceMatcher::new(values, path)?) as Box<dyn Matcher>);
+                    config::Matcher::Sequence {
+                        path,
+                        values,
+                        aturi,
+                    } => {
+                        matchers.push(Box::new(SequenceMatcher::new(values, path, aturi)?)
+                            as Box<dyn Matcher>);
                     }
 
                     #[cfg(feature = "rhai")]
@@ -93,11 +88,7 @@ impl FeedMatchers {
                 }
             }
 
-            feed_matchers.push(FeedMatcher {
-                feed,
-                aturi,
-                matchers,
-            });
+            feed_matchers.push(FeedMatcher { feed, matchers });
         }
 
         Ok(Self(feed_matchers))
@@ -105,28 +96,48 @@ impl FeedMatchers {
 }
 
 impl FeedMatcher {
-    pub(crate) fn matches(&self, value: &serde_json::Value) -> bool {
-        self.matchers.iter().any(|matcher| matcher.matches(value))
+    pub(crate) fn matches(&self, value: &serde_json::Value) -> Option<MatcherResult> {
+        for matcher in self.matchers.iter() {
+            let result = matcher.matches(value);
+            if let Err(err) = result {
+                tracing::error!(error = ?err, "matcher returned error");
+                continue;
+            }
+            let result = result.unwrap();
+            if result.matched {
+                return Some(result);
+            }
+        }
+        None
     }
 }
 
 pub struct EqualsMatcher {
     expected: String,
     path: JsonPath,
+    aturi_path: Option<JsonPath>,
 }
 
 impl EqualsMatcher {
-    pub fn new(expected: &str, path: &str) -> Result<Self> {
+    pub fn new(expected: &str, path: &str, aturi: &Option<String>) -> Result<Self> {
         let path = JsonPath::parse(path).context("cannot parse path")?;
+        let aturi_path = if let Some(aturi) = aturi {
+            let parsed_aturi_path =
+                JsonPath::parse(aturi).context("cannot parse aturi jsonpath")?;
+            Some(parsed_aturi_path)
+        } else {
+            None
+        };
         Ok(Self {
             expected: expected.to_string(),
             path,
+            aturi_path,
         })
     }
 }
 
 impl Matcher for EqualsMatcher {
-    fn matches(&self, value: &serde_json::Value) -> bool {
+    fn matches(&self, value: &serde_json::Value) -> Result<MatcherResult> {
         let nodes = self.path.query(value).all();
 
         let string_nodes = nodes
@@ -140,27 +151,45 @@ impl Matcher for EqualsMatcher {
             })
             .collect::<Vec<String>>();
 
-        string_nodes.iter().any(|value| value == &self.expected)
+        if string_nodes.iter().any(|value| value == &self.expected) {
+            let aturi = extract_aturi(self.aturi_path.as_ref(), value)
+                .ok_or(anyhow!("matcher matched but could not create at-uri"))?;
+            Ok(MatcherResult {
+                matched: true,
+                aturi,
+            })
+        } else {
+            Ok(MatcherResult::default())
+        }
     }
 }
 
 pub struct PrefixMatcher {
     prefix: String,
     path: JsonPath,
+    aturi_path: Option<JsonPath>,
 }
 
 impl PrefixMatcher {
-    pub(crate) fn new(prefix: &str, path: &str) -> Result<Self> {
+    pub(crate) fn new(prefix: &str, path: &str, aturi: &Option<String>) -> Result<Self> {
         let path = JsonPath::parse(path).context("cannot parse path")?;
+        let aturi_path = if let Some(aturi) = aturi {
+            let parsed_aturi_path =
+                JsonPath::parse(aturi).context("cannot parse aturi jsonpath")?;
+            Some(parsed_aturi_path)
+        } else {
+            None
+        };
         Ok(Self {
             prefix: prefix.to_string(),
             path,
+            aturi_path,
         })
     }
 }
 
 impl Matcher for PrefixMatcher {
-    fn matches(&self, value: &serde_json::Value) -> bool {
+    fn matches(&self, value: &serde_json::Value) -> Result<MatcherResult> {
         let nodes = self.path.query(value).all();
 
         let string_nodes = nodes
@@ -174,29 +203,48 @@ impl Matcher for PrefixMatcher {
             })
             .collect::<Vec<String>>();
 
-        string_nodes
+        let found = string_nodes
             .iter()
-            .any(|value| value.starts_with(&self.prefix))
+            .any(|value| value.starts_with(&self.prefix));
+        if found {
+            let aturi = extract_aturi(self.aturi_path.as_ref(), value)
+                .ok_or(anyhow!("matcher matched but could not create at-uri"))?;
+            Ok(MatcherResult {
+                matched: true,
+                aturi,
+            })
+        } else {
+            Ok(MatcherResult::default())
+        }
     }
 }
 
 pub struct SequenceMatcher {
     expected: Vec<String>,
     path: JsonPath,
+    aturi_path: Option<JsonPath>,
 }
 
 impl SequenceMatcher {
-    pub(crate) fn new(expected: &[String], path: &str) -> Result<Self> {
+    pub(crate) fn new(expected: &[String], path: &str, aturi: &Option<String>) -> Result<Self> {
         let path = JsonPath::parse(path).context("cannot parse path")?;
+        let aturi_path = if let Some(aturi) = aturi {
+            let parsed_aturi_path =
+                JsonPath::parse(aturi).context("cannot parse aturi jsonpath")?;
+            Some(parsed_aturi_path)
+        } else {
+            None
+        };
         Ok(Self {
             expected: expected.to_owned(),
             path,
+            aturi_path,
         })
     }
 }
 
 impl Matcher for SequenceMatcher {
-    fn matches(&self, value: &serde_json::Value) -> bool {
+    fn matches(&self, value: &serde_json::Value) -> Result<MatcherResult> {
         let nodes = self.path.query(value).all();
 
         let string_nodes = nodes
@@ -230,21 +278,65 @@ impl Matcher for SequenceMatcher {
             }
 
             if last_found != -1 && found_index == self.expected.len() - 1 {
-                return true;
+                let aturi = extract_aturi(self.aturi_path.as_ref(), value)
+                    .ok_or(anyhow!("matcher matched but could not create at-uri"))?;
+                return Ok(MatcherResult {
+                    matched: true,
+                    aturi,
+                });
             }
         }
 
-        false
+        Ok(MatcherResult::default())
     }
+}
+
+fn extract_aturi(aturi: Option<&JsonPath>, event_value: &serde_json::Value) -> Option<String> {
+    if let Some(aturi_path) = aturi {
+        let nodes = aturi_path.query(event_value).all();
+        let string_nodes = nodes
+            .iter()
+            .filter_map(|value| {
+                if let serde_json::Value::String(actual) = value {
+                    Some(actual.to_lowercase().clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<String>>();
+
+        for value in string_nodes {
+            if value.starts_with("at://") {
+                return Some(value);
+            }
+        }
+    }
+
+    let rtype = event_value
+        .get("commit")
+        .and_then(|commit| commit.get("record"))
+        .and_then(|commit| commit.get("$type"))
+        .and_then(|did| did.as_str());
+
+    if Some("app.bsky.feed.post") == rtype {
+        let did = event_value.get("did").and_then(|did| did.as_str())?;
+        let commit = event_value.get("commit")?;
+        let collection = commit.get("collection").and_then(|did| did.as_str())?;
+        let rkey = commit.get("rkey").and_then(|did| did.as_str())?;
+        let uri = format!("at://{}/{}/{}", did, collection, rkey);
+        return Some(uri);
+    }
+
+    None
 }
 
 #[cfg(feature = "rhai")]
 pub mod rhai {
 
     use super::{Matcher, MatcherResult};
-    use anyhow::{Context, Result};
+    use anyhow::{anyhow, Context, Result};
 
-    use rhai::{serde::to_dynamic, Engine, Scope, AST};
+    use rhai::{serde::to_dynamic, Dynamic, Engine, Scope, AST};
     use std::{path::PathBuf, str::FromStr};
 
     pub struct RhaiMatcher {
@@ -263,9 +355,9 @@ pub mod rhai {
                     MatcherResult::get_matched,
                     MatcherResult::set_matched,
                 )
-                .register_get_set("score", MatcherResult::get_score, MatcherResult::set_score)
                 .register_get_set("aturi", MatcherResult::get_aturi, MatcherResult::set_aturi)
-                .register_fn("new_matcher_result", MatcherResult::default);
+                .register_fn("new_matcher_result", MatcherResult::default)
+                .register_fn("build_aturi", build_aturi);
             let ast = engine
                 .compile_file(PathBuf::from_str(source)?)
                 .context("cannot compile script")?;
@@ -278,31 +370,50 @@ pub mod rhai {
     }
 
     impl Matcher for RhaiMatcher {
-        fn matches(&self, value: &serde_json::Value) -> bool {
+        fn matches(&self, value: &serde_json::Value) -> Result<MatcherResult> {
             let mut scope = Scope::new();
             let value_map = to_dynamic(value);
             if let Err(err) = value_map {
-                println!("error: {:?}", err);
                 tracing::error!(source = ?self.source, error = ?err, "error converting value to dynamic");
-                return false;
+                return Ok(MatcherResult::default());
             }
             let value_map = value_map.unwrap();
             scope.push("event", value_map);
 
-            let result = self
-                .engine
-                .eval_ast_with_scope::<MatcherResult>(&mut scope, &self.ast);
-
-            if let Err(err) = result {
-                println!("error: {:?}", err);
-                tracing::error!(source = ?self.source, error = ?err, "error evaluating script");
-                return false;
-            }
-
-            let result = result.unwrap();
-
-            result.matched
+            self.engine
+                .eval_ast_with_scope::<MatcherResult>(&mut scope, &self.ast)
+                .context("error evaluating script")
         }
+    }
+
+    fn build_aturi_maybe(event: Dynamic) -> Result<String> {
+        println!("{event:?}");
+        let event = event.as_map_ref().map_err(|err| anyhow!(err))?;
+
+        let commit = event.get("commit").ok_or(anyhow!("no commit on event"))?.as_map_ref().map_err(|err| anyhow!(err))?;
+        let record = commit.get("record").ok_or(anyhow!("no record on event commit"))?.as_map_ref().map_err(|err| anyhow!(err))?;
+
+        let rtype = record.get("$type").ok_or(anyhow!("no $type on event commit record"))?.as_immutable_string_ref().map_err(|err| anyhow!(err))?;
+
+        if rtype.as_str() == "app.bsky.feed.post" {
+            let did = event.get("did").ok_or(anyhow!("no did on event"))?.as_immutable_string_ref().map_err(|err| anyhow!(err))?;
+            let collection = commit.get("collection").ok_or(anyhow!("no collection on event"))?.as_immutable_string_ref().map_err(|err| anyhow!(err))?;
+            let rkey = commit.get("rkey").ok_or(anyhow!("no rkey on event commit"))?.as_immutable_string_ref().map_err(|err| anyhow!(err))?;
+
+            return Ok(format!("at://{}/{}/{}", did.as_str(), collection.as_str(), rkey.as_str()));
+        }
+
+
+        Err(anyhow!("no aturi for event"))
+    }
+
+    fn build_aturi(event: Dynamic) -> String {
+        let aturi = build_aturi_maybe(event);
+        if let Err(err) = aturi {
+            println!("error {err:?}");
+            return "".into();
+        }
+        aturi.unwrap()
     }
 }
 
@@ -348,8 +459,8 @@ mod tests {
         ];
 
         for (path, expected, result) in tests {
-            let matcher = EqualsMatcher::new(expected, path).expect("matcher is valid");
-            assert_eq!(matcher.matches(&value), result);
+            let matcher = EqualsMatcher::new(expected, path, &None).expect("matcher is valid");
+            assert_eq!(matcher.matches(&value).expect("match ok"), result);
         }
     }
 
@@ -396,8 +507,8 @@ mod tests {
         ];
 
         for (path, prefix, result) in tests {
-            let matcher = PrefixMatcher::new(prefix, path).expect("matcher is valid");
-            assert_eq!(matcher.matches(&value), result);
+            let matcher = PrefixMatcher::new(prefix, path, &None).expect("matcher is valid");
+            assert_eq!(matcher.matches(&value).expect("match ok"), result);
         }
     }
 
@@ -463,8 +574,8 @@ mod tests {
         ];
 
         for (path, values, result) in tests {
-            let matcher = SequenceMatcher::new(&values, path).expect("matcher is valid");
-            assert_eq!(matcher.matches(&value), result);
+            let matcher = SequenceMatcher::new(&values, path, &None).expect("matcher is valid");
+            assert_eq!(matcher.matches(&value).expect("match ok"), result);
         }
     }
 
@@ -472,30 +583,48 @@ mod tests {
     fn sequence_matcher_edge_case_1() {
         let raw_json = r#"{"text": "Stellwerkstörung. Und Signalstörung.  Und der Alternativzug ist auch ausgefallen. Und überhaupt."}"#;
         let value: serde_json::Value = serde_json::from_str(raw_json).expect("json is valid");
-        let matcher =
-            SequenceMatcher::new(&vec!["smoke".to_string(), "signal".to_string()], "$.text")
-                .expect("matcher is valid");
-        assert_eq!(matcher.matches(&value), false);
+        let matcher = SequenceMatcher::new(
+            &vec!["smoke".to_string(), "signal".to_string()],
+            "$.text",
+            &None,
+        )
+        .expect("matcher is valid");
+        assert_eq!(matcher.matches(&value).expect("match ok"), false);
     }
 }
 
 #[cfg(all(test, feature = "rhai"))]
 mod rhaitests {
 
-    use anyhow::{anyhow, Result};
     use super::rhai::*;
     use super::*;
+    use anyhow::{anyhow, Result};
     use std::path::PathBuf;
 
     #[cfg(feature = "rhai")]
     #[test]
     fn rhai_matcher() -> Result<()> {
-        
         let testdata = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata");
 
         let tests = vec![
-            ("post1.json", [("rhai_match_everything.rhai", true),("rhai_match_type.rhai", true),("rhai_match_poster.rhai", true), ("rhai_match_reply_root.rhai", false)]),
-            ("post2.json", [("rhai_match_everything.rhai", true),("rhai_match_type.rhai", true),("rhai_match_poster.rhai", true), ("rhai_match_reply_root.rhai", true)])
+            (
+                "post1.json",
+                [
+                    ("rhai_match_everything.rhai", true, "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadb7behk25"),
+                    ("rhai_match_type.rhai", true, "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadb7behk25"),
+                    ("rhai_match_poster.rhai", true, "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadb7behk25"),
+                    ("rhai_match_reply_root.rhai", false, ""),
+                ],
+            ),
+            (
+                "post2.json",
+                [
+                    ("rhai_match_everything.rhai", true, "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadftr72k25"),
+                    ("rhai_match_type.rhai", true, "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadftr72k25"),
+                    ("rhai_match_poster.rhai", true, "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadftr72k25"),
+                    ("rhai_match_reply_root.rhai", true, "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadftr72k25"),
+                ],
+            ),
         ];
 
         for (input_json, matcher_tests) in tests {
@@ -503,14 +632,17 @@ mod rhaitests {
             let json_content = std::fs::read(input_json_path).map_err(|err| {
                 anyhow::Error::new(err).context(anyhow!("reading input_json failed"))
             })?;
-            let value: serde_json::Value = serde_json::from_slice(&json_content).context("parsing input_json failed")?;
+            let value: serde_json::Value =
+                serde_json::from_slice(&json_content).context("parsing input_json failed")?;
 
-            for (matcher_file_name, expected) in matcher_tests {
+            for (matcher_file_name, matched, aturi) in matcher_tests {
                 let matcher_path = testdata.join(matcher_file_name);
-                let matcher = RhaiMatcher::new(&matcher_path.to_string_lossy()).context("could not construct matcher")?;
-                assert_eq!(matcher.matches(&value), expected);
+                let matcher = RhaiMatcher::new(&matcher_path.to_string_lossy())
+                    .context("could not construct matcher")?;
+                let result = matcher.matches(&value)?;
+                assert_eq!(result.matched, matched, "matched {}: {}", input_json, matcher_file_name);
+                assert_eq!(result.aturi, aturi, "aturi {}: {}", input_json, matcher_file_name);
             }
-
         }
 
         Ok(())

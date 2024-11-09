@@ -10,4 +10,8 @@ switch rtype {
   _ => { }
 }
 
+if result.matched {
+  result.aturi = build_aturi(event);
+}
+
 result

@@ -32,6 +32,12 @@ let result = new_matcher_result();
 result
 ```
 
+## Provided Methods
+
+The following methods are available to rhai scripts:
+
+* `build_aturi(event: Event) -> String` - Build an AT-URI from an event. For feed posts, this composes an AT-URI from the event DID, commit collection, and commit rkey.
+
 ## Usage
 
 The feed matcher type `rhai` is used with a `source` attribute that points to an rhai script file.
@@ -65,7 +71,11 @@ if rtype != "app.bsky.feed.post" {
 
 let root_uri = event?.commit?.record?.reply?.root?.uri;
 
-result.matched = root_uri.starts_with("at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/");
+result.matched = `${root_uri}`.starts_with("at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/");
+
+if result.matched {
+  result.aturi = build_aturi(event);
+}
 
 result
 ```

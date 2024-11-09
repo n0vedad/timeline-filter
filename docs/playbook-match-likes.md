@@ -8,7 +8,7 @@ Using this feature, we can match on non-post records, such as likes.
 
 To match on likes, we need to make 2 changes:
 
-1. Add the `aturi` attribute to the feed configuration.
+1. Add the `aturi` attribute to the feed configuration for the matcher.
 2. Set the environment value `COLLECTIONS` to include `app.bsky.feed.like,app.bsky.feed.post`. When not explicitly set, the default value is `app.bsky.feed.post`.
 
 ## Example
@@ -22,10 +22,10 @@ feeds:
 - uri: "at://did:plc:decafbad/app.bsky.feed.generator/my_popular_posts"
   name: "My popular posts"
   description: "Posts that I've made that have been liked."
-  aturi: "$.commit.record.subject.uri"
   matchers:
   - path: "$.commit.record.subject.uri"
     value: "at://did:plc:decafbad/app.bsky.feed.post/"
     type: prefix
+    aturi: "$.commit.record.subject.uri"
 ```
 

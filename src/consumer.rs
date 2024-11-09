@@ -142,12 +142,18 @@ impl ConsumerTask {
                         }
                         let decoded = decoded.unwrap();
                         serde_json::from_slice::<model::Event>(&decoded)
+                        .context(anyhow!("cannot deserialize message"))
                     } else {
                         if !item.is_text() {
                             tracing::debug!("compression enabled but message from jetstream is not binary");
                             continue;
                         }
-                        serde_json::from_str(item.as_text().ok_or(anyhow!("cannot convert message to text"))?)
+                        item.as_text()
+                            .ok_or(anyhow!("cannot convert message to text"))
+                            .and_then(|value| {
+                                serde_json::from_str::<model::Event>(value)
+                                .context(anyhow!("cannot deserialize message"))
+                            })
                     };
                     if let Err(err) = event {
                         tracing::error!(error = ?err, "error processing jetstream message");
@@ -170,12 +176,12 @@ impl ConsumerTask {
                     let event_value = event_value.unwrap();
 
                     for feed_matcher in self.feed_matchers.0.iter() {
-                        if feed_matcher.matches(&event_value) {
+                        if let Some(match_result) = feed_matcher.matches(&event_value) {
                             tracing::debug!(feed_id = ?feed_matcher.feed, "matched event");
-                            if let Some(uri) = model::to_post_strong_ref(feed_matcher.aturi.as_ref(), &event, &event_value) {
+                            if match_result.matched {
                                 let feed_content = storage::model::FeedContent{
                                     feed_id: feed_matcher.feed.clone(),
-                                    uri,
+                                    uri: match_result.aturi,
                                     indexed_at: event.clone().time_us,
                                 };
                                 feed_content_insert(&self.pool, &feed_content).await?;
@@ -197,7 +203,6 @@ pub(crate) mod model {
     use std::collections::HashMap;
 
     use serde::{Deserialize, Serialize};
-    use serde_json_path::JsonPath;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(tag = "type", content = "payload")]
@@ -288,40 +293,5 @@ pub(crate) mod model {
         pub(crate) kind: String,
         pub(crate) time_us: i64,
         pub(crate) commit: Option<CommitOp>,
-    }
-
-    pub(crate) fn to_post_strong_ref(
-        aturi: Option<&JsonPath>,
-        event: &Event,
-        event_value: &serde_json::Value,
-    ) -> Option<String> {
-        if let Some(CommitOp::Create {
-            collection, rkey, ..
-        }) = &event.commit
-        {
-            if let Some(aturi_path) = aturi {
-                let nodes = aturi_path.query(event_value).all();
-                let string_nodes = nodes
-                    .iter()
-                    .filter_map(|value| {
-                        if let serde_json::Value::String(actual) = value {
-                            Some(actual.to_lowercase().clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<String>>();
-
-                for value in string_nodes {
-                    if value.starts_with("at://") {
-                        return Some(value);
-                    }
-                }
-            }
-
-            let uri = format!("at://{}/{}/{}", event.did, collection, rkey);
-            return Some(uri);
-        }
-        None
     }
 }

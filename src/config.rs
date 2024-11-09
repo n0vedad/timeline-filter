@@ -30,13 +30,25 @@ pub struct Feed {
 #[serde(tag = "type")]
 pub enum Matcher {
     #[serde(rename = "equal")]
-    Equal { path: String, value: String },
+    Equal {
+        path: String,
+        value: String,
+        aturi: Option<String>,
+    },
 
     #[serde(rename = "prefix")]
-    Prefix { path: String, value: String },
+    Prefix {
+        path: String,
+        value: String,
+        aturi: Option<String>,
+    },
 
     #[serde(rename = "sequence")]
-    Sequence { path: String, values: Vec<String> },
+    Sequence {
+        path: String,
+        values: Vec<String>,
+        aturi: Option<String>,
+    },
 
     #[serde(rename = "rhai")]
     Rhai { script: String },
