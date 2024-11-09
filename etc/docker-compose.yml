@@ -2,7 +2,8 @@ version: '3.9'
 services:
   supercell:
     labels: [ "com.centurylinklabs.watchtower.scope=supercell" ]
-    image: supercell:latest
+    container_name: supercell
+    image: "ghcr.io/astrenoxcoop/supercell:latest"
     restart: unless-stopped
     ports:
     - "127.0.0.1:4050:4050"
@@ -10,6 +11,11 @@ services:
       - type: bind
         source: /var/lib/supercell/database.db
         target: /var/lib/supercell/database.db
+      - type: bind
+        source: /var/lib/supercell/config.yml
+        target: /var/lib/supercell/config.yml
+      - type: bind
+        source: /var/lib/supercell/jetstream_zstd_dictionary
+        target: /var/lib/supercell/jetstream_zstd_dictionary
     env_file:
       - /var/lib/supercell/production.env
-
