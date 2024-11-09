@@ -1,17 +1,3 @@
-## [0.3.0] - 2024-11-09
-
-### Added
-
-- Support per-matcher AT-URI
-
-### Changed
-
-- Added org.opencontainers labels
-- Downgrading error to info
-- Experimental rhai scripting support
-- Updating example docker-compose configuration file
-- Setting version to 0.3.0
-
 ## [0.2.0] - 2024-11-07
 
 ### Changed
@@ -53,7 +39,6 @@
 - Setting version to 0.1.1
 - 0.1.1
 
-[0.3.0]: https://github.com/astrenoxcoop/supercell/compare/0.2.0..0.3.0
 [0.2.0]: https://github.com/astrenoxcoop/supercell/compare/0.1.2..0.2.0
 [0.1.2]: https://github.com/astrenoxcoop/supercell/compare/0.1.1..0.1.2
 [0.1.1]: https://github.com/astrenoxcoop/supercell/compare/0.1.0..0.1.1
