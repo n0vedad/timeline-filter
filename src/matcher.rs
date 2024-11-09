@@ -152,8 +152,10 @@ impl Matcher for EqualsMatcher {
             .collect::<Vec<String>>();
 
         if string_nodes.iter().any(|value| value == &self.expected) {
-            let aturi = extract_aturi(self.aturi_path.as_ref(), value)
-                .ok_or(anyhow!("matcher matched but could not create at-uri"))?;
+            let aturi = extract_aturi(self.aturi_path.as_ref(), value).ok_or(anyhow!(
+                "matcher matched but could not create at-uri: {:?}",
+                value
+            ))?;
             Ok(MatcherResult {
                 matched: true,
                 aturi,
@@ -207,8 +209,10 @@ impl Matcher for PrefixMatcher {
             .iter()
             .any(|value| value.starts_with(&self.prefix));
         if found {
-            let aturi = extract_aturi(self.aturi_path.as_ref(), value)
-                .ok_or(anyhow!("matcher matched but could not create at-uri"))?;
+            let aturi = extract_aturi(self.aturi_path.as_ref(), value).ok_or(anyhow!(
+                "matcher matched but could not create at-uri: {:?}",
+                value
+            ))?;
             Ok(MatcherResult {
                 matched: true,
                 aturi,
@@ -278,8 +282,10 @@ impl Matcher for SequenceMatcher {
             }
 
             if last_found != -1 && found_index == self.expected.len() - 1 {
-                let aturi = extract_aturi(self.aturi_path.as_ref(), value)
-                    .ok_or(anyhow!("matcher matched but could not create at-uri"))?;
+                let aturi = extract_aturi(self.aturi_path.as_ref(), value).ok_or(anyhow!(
+                    "matcher matched but could not create at-uri: {:?}",
+                    value
+                ))?;
                 return Ok(MatcherResult {
                     matched: true,
                     aturi,
@@ -325,6 +331,16 @@ fn extract_aturi(aturi: Option<&JsonPath>, event_value: &serde_json::Value) -> O
         let rkey = commit.get("rkey").and_then(|did| did.as_str())?;
         let uri = format!("at://{}/{}/{}", did, collection, rkey);
         return Some(uri);
+    }
+
+    if Some("app.bsky.feed.like") == rtype {
+        return event_value
+            .get("commit")
+            .and_then(|value| value.get("record"))
+            .and_then(|value| value.get("subject"))
+            .and_then(|value| value.get("uri"))
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string());
     }
 
     None
@@ -390,21 +406,50 @@ pub mod rhai {
         println!("{event:?}");
         let event = event.as_map_ref().map_err(|err| anyhow!(err))?;
 
-        let commit = event.get("commit").ok_or(anyhow!("no commit on event"))?.as_map_ref().map_err(|err| anyhow!(err))?;
-        let record = commit.get("record").ok_or(anyhow!("no record on event commit"))?.as_map_ref().map_err(|err| anyhow!(err))?;
+        let commit = event
+            .get("commit")
+            .ok_or(anyhow!("no commit on event"))?
+            .as_map_ref()
+            .map_err(|err| anyhow!(err))?;
+        let record = commit
+            .get("record")
+            .ok_or(anyhow!("no record on event commit"))?
+            .as_map_ref()
+            .map_err(|err| anyhow!(err))?;
 
-        let rtype = record.get("$type").ok_or(anyhow!("no $type on event commit record"))?.as_immutable_string_ref().map_err(|err| anyhow!(err))?;
+        let rtype = record
+            .get("$type")
+            .ok_or(anyhow!("no $type on event commit record"))?
+            .as_immutable_string_ref()
+            .map_err(|err| anyhow!(err))?;
 
-        if rtype.as_str() == "app.bsky.feed.post" {
-            let did = event.get("did").ok_or(anyhow!("no did on event"))?.as_immutable_string_ref().map_err(|err| anyhow!(err))?;
-            let collection = commit.get("collection").ok_or(anyhow!("no collection on event"))?.as_immutable_string_ref().map_err(|err| anyhow!(err))?;
-            let rkey = commit.get("rkey").ok_or(anyhow!("no rkey on event commit"))?.as_immutable_string_ref().map_err(|err| anyhow!(err))?;
+        match rtype.as_str() {
+            "app.bsky.feed.post" => {
+                let did = event
+                    .get("did")
+                    .ok_or(anyhow!("no did on event"))?
+                    .as_immutable_string_ref()
+                    .map_err(|err| anyhow!(err))?;
+                let collection = commit
+                    .get("collection")
+                    .ok_or(anyhow!("no collection on event"))?
+                    .as_immutable_string_ref()
+                    .map_err(|err| anyhow!(err))?;
+                let rkey = commit
+                    .get("rkey")
+                    .ok_or(anyhow!("no rkey on event commit"))?
+                    .as_immutable_string_ref()
+                    .map_err(|err| anyhow!(err))?;
 
-            return Ok(format!("at://{}/{}/{}", did.as_str(), collection.as_str(), rkey.as_str()));
+                Ok(format!(
+                    "at://{}/{}/{}",
+                    did.as_str(),
+                    collection.as_str(),
+                    rkey.as_str()
+                ))
+            }
+            _ => Err(anyhow!("no aturi for event")),
         }
-
-
-        Err(anyhow!("no aturi for event"))
     }
 
     fn build_aturi(event: Dynamic) -> String {
@@ -610,19 +655,47 @@ mod rhaitests {
             (
                 "post1.json",
                 [
-                    ("rhai_match_everything.rhai", true, "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadb7behk25"),
-                    ("rhai_match_type.rhai", true, "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadb7behk25"),
-                    ("rhai_match_poster.rhai", true, "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadb7behk25"),
+                    (
+                        "rhai_match_everything.rhai",
+                        true,
+                        "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadb7behk25",
+                    ),
+                    (
+                        "rhai_match_type.rhai",
+                        true,
+                        "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadb7behk25",
+                    ),
+                    (
+                        "rhai_match_poster.rhai",
+                        true,
+                        "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadb7behk25",
+                    ),
                     ("rhai_match_reply_root.rhai", false, ""),
                 ],
             ),
             (
                 "post2.json",
                 [
-                    ("rhai_match_everything.rhai", true, "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadftr72k25"),
-                    ("rhai_match_type.rhai", true, "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadftr72k25"),
-                    ("rhai_match_poster.rhai", true, "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadftr72k25"),
-                    ("rhai_match_reply_root.rhai", true, "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadftr72k25"),
+                    (
+                        "rhai_match_everything.rhai",
+                        true,
+                        "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadftr72k25",
+                    ),
+                    (
+                        "rhai_match_type.rhai",
+                        true,
+                        "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadftr72k25",
+                    ),
+                    (
+                        "rhai_match_poster.rhai",
+                        true,
+                        "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadftr72k25",
+                    ),
+                    (
+                        "rhai_match_reply_root.rhai",
+                        true,
+                        "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadftr72k25",
+                    ),
                 ],
             ),
         ];
@@ -640,8 +713,16 @@ mod rhaitests {
                 let matcher = RhaiMatcher::new(&matcher_path.to_string_lossy())
                     .context("could not construct matcher")?;
                 let result = matcher.matches(&value)?;
-                assert_eq!(result.matched, matched, "matched {}: {}", input_json, matcher_file_name);
-                assert_eq!(result.aturi, aturi, "aturi {}: {}", input_json, matcher_file_name);
+                assert_eq!(
+                    result.matched, matched,
+                    "matched {}: {}",
+                    input_json, matcher_file_name
+                );
+                assert_eq!(
+                    result.aturi, aturi,
+                    "aturi {}: {}",
+                    input_json, matcher_file_name
+                );
             }
         }
 
