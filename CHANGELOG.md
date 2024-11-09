@@ -12,12 +12,6 @@
 - Updating example docker-compose configuration file
 - Setting version to 0.3.0
 - 0.3.0
-- Typo in cargo config
-- 0.3.0
-
-### Fixed
-
-- Fixing bad build stuff
 
 ## [0.2.0] - 2024-11-07
 
