@@ -15,21 +15,20 @@ pub mod model {
         pub feed_id: String,
         pub uri: String,
         pub indexed_at: i64,
+        pub score: i32,
     }
 }
 
-pub async fn feed_content_insert(
-    pool: &StoragePool,
-    feed_content: &model::FeedContent,
-) -> Result<()> {
+pub async fn feed_content_insert(pool: &StoragePool, feed_content: &FeedContent) -> Result<()> {
     let mut tx = pool.begin().await.context("failed to begin transaction")?;
 
     let now = Utc::now();
-    sqlx::query("INSERT OR REPLACE INTO feed_content (feed_id, uri, indexed_at, updated_at) VALUES (?, ?, ?, ?)")
+    sqlx::query("INSERT OR REPLACE INTO feed_content (feed_id, uri, indexed_at, updated_at, score) VALUES (?, ?, ?, ?, ?)")
         .bind(&feed_content.feed_id)
         .bind(&feed_content.uri)
         .bind(feed_content.indexed_at)
         .bind(now)
+        .bind(feed_content.score)
         .execute(tx.as_mut())
         .await.context("failed to insert feed content record")?;
 
@@ -37,6 +36,40 @@ pub async fn feed_content_insert(
 }
 
 pub async fn feed_content_paginate(
+    pool: &StoragePool,
+    feed_uri: &str,
+    limit: Option<u16>,
+    cursor: Option<i64>,
+) -> Result<Vec<FeedContent>> {
+    let mut tx = pool.begin().await.context("failed to begin transaction")?;
+
+    let limit = limit.unwrap_or(20).clamp(1, 100);
+
+    let results = if let Some(indexed_at) = cursor {
+        let query = "SELECT * FROM feed_content WHERE feed_id = ? AND indexed_at < ? ORDER BY indexed_at DESC LIMIT ?";
+
+        sqlx::query_as::<_, FeedContent>(query)
+            .bind(feed_uri)
+            .bind(indexed_at)
+            .bind(limit)
+            .fetch_all(tx.as_mut())
+            .await?
+    } else {
+        let query = "SELECT * FROM feed_content WHERE feed_id = ? ORDER BY indexed_at DESC LIMIT ?";
+
+        sqlx::query_as::<_, FeedContent>(query)
+            .bind(feed_uri)
+            .bind(limit)
+            .fetch_all(tx.as_mut())
+            .await?
+    };
+
+    tx.commit().await.context("failed to commit transaction")?;
+
+    Ok(results)
+}
+
+pub async fn feed_content_paginate_popular(
     pool: &StoragePool,
     feed_uri: &str,
     limit: Option<u16>,
@@ -180,6 +213,7 @@ mod tests {
             uri: "at://did:plc:qadlgs4xioohnhi2jg54mqds/app.bsky.feed.post/3la3bqjg4hx2n"
                 .to_string(),
             indexed_at: 1730673934229172_i64,
+            score: 1,
         };
         super::feed_content_insert(&pool, &record)
             .await

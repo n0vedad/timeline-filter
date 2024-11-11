@@ -11,6 +11,8 @@ use tokio_websockets::{ClientBuilder, Message};
 
 use crate::config;
 use crate::matcher::FeedMatchers;
+use crate::matcher::Match;
+use crate::matcher::MatchOperation;
 use crate::storage;
 use crate::storage::consumer_control_get;
 use crate::storage::consumer_control_insert;
@@ -176,16 +178,18 @@ impl ConsumerTask {
                     let event_value = event_value.unwrap();
 
                     for feed_matcher in self.feed_matchers.0.iter() {
-                        if let Some(match_result) = feed_matcher.matches(&event_value) {
+                        if let Some(Match(op, aturi)) = feed_matcher.matches(&event_value) {
                             tracing::debug!(feed_id = ?feed_matcher.feed, "matched event");
-                            if match_result.matched {
-                                let feed_content = storage::model::FeedContent{
-                                    feed_id: feed_matcher.feed.clone(),
-                                    uri: match_result.aturi,
-                                    indexed_at: event.clone().time_us,
-                                };
+                            let feed_content = storage::model::FeedContent{
+                                feed_id: feed_matcher.feed.clone(),
+                                uri: aturi,
+                                indexed_at: event.clone().time_us,
+                                score: 1,
+                            };
+                            if op == MatchOperation::Upsert {
                                 feed_content_insert(&self.pool, &feed_content).await?;
                             }
+
                         }
                     }
                 }

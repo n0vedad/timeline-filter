@@ -1,11 +1,31 @@
 use std::collections::HashSet;
+use std::fmt;
+use std::marker::PhantomData;
+use std::str::FromStr;
 
 use anyhow::{anyhow, Result};
-use serde::Deserialize;
+use serde::de::{self, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 
 #[derive(Clone, Deserialize)]
 pub struct Feeds {
     pub feeds: Vec<Feed>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum FeedQuery {
+    #[serde(rename = "simple")]
+    Simple {},
+
+    #[serde(rename = "popular")]
+    Popular {
+        #[serde(default)]
+        age_floor: i64,
+
+        #[serde(default)]
+        gravity: f64,
+    },
 }
 
 #[derive(Clone, Deserialize)]
@@ -22,6 +42,9 @@ pub struct Feed {
 
     #[serde(default)]
     pub deny: Option<String>,
+
+    #[serde(default, deserialize_with = "string_or_struct")]
+    pub query: FeedQuery,
 
     pub matchers: Vec<Matcher>,
 }
@@ -275,4 +298,60 @@ impl AsRef<Vec<String>> for Collections {
     fn as_ref(&self) -> &Vec<String> {
         &self.0
     }
+}
+
+impl Default for FeedQuery {
+    fn default() -> Self {
+        FeedQuery::Simple {}
+    }
+}
+
+impl FromStr for FeedQuery {
+    type Err = anyhow::Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "simple" => Ok(FeedQuery::Simple {}),
+            "popular" => Ok(FeedQuery::Popular {
+                age_floor: 0,
+                gravity: 2.0,
+            }),
+            _ => Err(anyhow!("unsupported query")),
+        }
+    }
+}
+
+fn string_or_struct<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+where
+    T: Deserialize<'de> + FromStr<Err = anyhow::Error>,
+    D: Deserializer<'de>,
+{
+    struct StringOrStruct<T>(PhantomData<fn() -> T>);
+
+    impl<'de, T> Visitor<'de> for StringOrStruct<T>
+    where
+        T: Deserialize<'de> + FromStr<Err = anyhow::Error>,
+    {
+        type Value = T;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("string or FeedQuery")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<T, E>
+        where
+            E: de::Error,
+        {
+            FromStr::from_str(value).map_err(|_| de::Error::custom("cannot deserialize field"))
+        }
+
+        fn visit_map<M>(self, map: M) -> Result<T, M::Error>
+        where
+            M: MapAccess<'de>,
+        {
+            Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))
+        }
+    }
+
+    deserializer.deserialize_any(StringOrStruct(PhantomData))
 }
