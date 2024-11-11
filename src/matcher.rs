@@ -2,10 +2,7 @@ use anyhow::{anyhow, Context, Result};
 
 use serde_json_path::JsonPath;
 
-use rhai::{
-    serde::to_dynamic,
-    CustomType, Dynamic, Engine, Scope, TypeBuilder, AST,
-};
+use rhai::{serde::to_dynamic, CustomType, Dynamic, Engine, Scope, TypeBuilder, AST};
 use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use crate::config;
@@ -23,6 +20,9 @@ pub struct Match(pub MatchOperation, pub String);
 impl Match {
     fn upsert(aturi: &str) -> Self {
         Self(MatchOperation::Upsert, aturi.to_string())
+    }
+    fn update(aturi: &str) -> Self {
+        Self(MatchOperation::Update, aturi.to_string())
     }
 }
 
@@ -358,7 +358,8 @@ impl RhaiMatcher {
         engine
             .build_type::<Match>()
             .register_fn("build_aturi", build_aturi)
-            .register_fn("new_match", Match::upsert);
+            .register_fn("update_match", Match::update)
+            .register_fn("upsert_match", Match::upsert);
         let ast = engine
             .compile_file(PathBuf::from_str(source)?)
             .context("cannot compile script")?;
@@ -380,7 +381,9 @@ fn dynamic_to_match(value: Dynamic) -> Result<Option<Match>> {
     if let Some(match_value) = value.try_cast::<Match>() {
         return Ok(Some(match_value));
     }
-    Err(anyhow!("unsupported return value type: must be int, string, or match"))
+    Err(anyhow!(
+        "unsupported return value type: must be int, string, or match"
+    ))
 }
 
 impl Matcher for RhaiMatcher {

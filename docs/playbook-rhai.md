@@ -20,16 +20,19 @@ docker build --build-arg=CARGO_FEATURES=rhai .
 
 ## Scripting
 
-Rhai matchers evaluate a script that returns a `MatcherResult` object. The script must return an object that matches this type.
+Rhai matchers evaluate a script that returns a `Match` object or a `string` containing the AT-URI of the post that has matched. Return values of `false` or `0` are considered not matched.
 
-The `new_matcher_result()` function is available to create a new `MatcherResult` object.
+The `upsert_match(aturi)` function is available to create a new `Match` object. It has one parameter, the AT-URI of the post that is matched.
 
 ```rhai
-let result = new_matcher_result();
-
+let condition_thing = true;
 // do some stuff ...
 
-result
+if condition_thing {
+  return upsert_match();
+}
+
+false
 ```
 
 ## Provided Methods
@@ -54,29 +57,33 @@ feeds:
   name: "rhai'ya doing"
   description: "This feed uses the rhai matcher to match against a complex expression."
   matchers:
-  - source: "/opt/supercell/rhaiyadoin.rhai"
+  - script: "/opt/supercell/rhaiyadoin.rhai"
     type: rhai
 ```
 
 An example rhai script:
 
 ```rhai
-let result = new_matcher_result();
+// Only match events from the bsky feed where the did is "did:plc:cbkjy5n7bk3ax2wplmtjofq2" (@ngerakines.me).
+if event.did != "did:plc:cbkjy5n7bk3ax2wplmtjofq2" {
+  return false;
+}
 
+// If the event has a commit that has a record that has a $type, set rtype. Otherwise the value will be ().
 let rtype = event?.commit?.record["$type"];
-
-if rtype != "app.bsky.feed.post" {
-  return result;
+switch rtype {
+  "app.bsky.feed.post" => {
+    // Compose the at-uri of the post that has matched.
+    return build_aturi(event);
+  }
+  "app.bsky.feed.like" => {
+    // Returns the subject uri of the like event or false if it doesn't exist.
+    return event?.commit?.record?.subject?.uri ?? false;
+  }
+  _ => { }
 }
 
-let root_uri = event?.commit?.record?.reply?.root?.uri;
-
-result.matched = `${root_uri}`.starts_with("at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/");
-
-if result.matched {
-  result.aturi = build_aturi(event);
-}
-
-result
+// Nothing else matches
+false
 ```
 

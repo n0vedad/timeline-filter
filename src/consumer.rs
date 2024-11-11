@@ -16,7 +16,8 @@ use crate::matcher::MatchOperation;
 use crate::storage;
 use crate::storage::consumer_control_get;
 use crate::storage::consumer_control_insert;
-use crate::storage::feed_content_insert;
+use crate::storage::feed_content_update;
+use crate::storage::feed_content_upsert;
 use crate::storage::StoragePool;
 
 const MAX_MESSAGE_SIZE: usize = 25000;
@@ -186,8 +187,13 @@ impl ConsumerTask {
                                 indexed_at: event.clone().time_us,
                                 score: 1,
                             };
-                            if op == MatchOperation::Upsert {
-                                feed_content_insert(&self.pool, &feed_content).await?;
+                            match op {
+                                MatchOperation::Upsert => {
+                                    feed_content_upsert(&self.pool, &feed_content).await?;
+                                },
+                                MatchOperation::Update => {
+                                    feed_content_update(&self.pool, &feed_content).await?;
+                                },
                             }
 
                         }
