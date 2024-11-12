@@ -17,6 +17,7 @@ Cargo.lock
 config.yml
 development.db
 jetstream_zstd_dictionary
+testdata/local_*
 
 # release hooks
 create-release-*.sh
