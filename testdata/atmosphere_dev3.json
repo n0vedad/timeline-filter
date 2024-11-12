@@ -1,0 +1,61 @@
+{
+  "did": "did:plc:cbkjy5n7bk3ax2wplmtjofq2",
+  "time_us": 1730491093829414,
+  "kind": "commit",
+  "commit": {
+    "rev": "3laadb7behk25",
+    "operation": "create",
+    "collection": "app.bsky.feed.post",
+    "rkey": "3laadb7behk25",
+    "record": {
+      "$type": "app.bsky.feed.post",
+      "createdAt": "2024-11-09T15:53:08.025Z",
+      "embed": {
+        "$type": "app.bsky.embed.external",
+        "external": {
+          "description": "Tools and libraries for Bluesky and ATProto by @mackuba.eu",
+          "thumb": {
+            "$type": "blob",
+            "ref": {
+              "$link": "bafkreiffszg6nvabkwrh5dm4mrrxt5qe5eezp47gj3kmepsgtpoiaht354"
+            },
+            "mimeType": "image/jpeg",
+            "size": 255960
+          },
+          "title": "blue.mackuba.eu",
+          "uri": "https://blue.mackuba.eu"
+        }
+      },
+      "facets": [
+        {
+          "features": [
+            {
+              "$type": "app.bsky.richtext.facet#tag",
+              "tag": "Ruby"
+            }
+          ],
+          "index": {
+            "byteEnd": 50,
+            "byteStart": 45
+          }
+        },
+        {
+          "features": [
+            {
+              "$type": "app.bsky.richtext.facet#tag",
+              "tag": "rubylang"
+            }
+          ],
+          "index": {
+            "byteEnd": 160,
+            "byteStart": 151
+          }
+        }
+      ],
+      "langs": [
+        "en"
+      ],
+      "text": "Looks like I've been followed by quite a few #Ruby developers this week for some reason, hello! 👋 Good to have you here, I love finally seeing more #rubylang folks here! ❤️ \n\nI might have something interesting for you 😎 Check out my Ruby open source projects for ATProto here, especially \"Minisky\":"
+    }
+  }
+}

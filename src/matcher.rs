@@ -384,7 +384,7 @@ impl MaybeMatch {
 }
 
 impl RhaiMatcher {
-    pub(crate) fn new(source: &str) -> Result<Self> {
+    pub fn new(source: &str) -> Result<Self> {
         let mut engine = Engine::new();
         engine
             .build_type::<Match>()

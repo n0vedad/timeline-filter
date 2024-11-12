@@ -1,0 +1,45 @@
+{
+  "did": "did:plc:cbkjy5n7bk3ax2wplmtjofq2",
+  "time_us": 1730491093829414,
+  "kind": "commit",
+  "commit": {
+    "rev": "3laadb7behk25",
+    "operation": "create",
+    "collection": "app.bsky.feed.post",
+    "rkey": "3laadb7behk25",
+    "record": {
+      "$type": "app.bsky.feed.post",
+      "createdAt": "2024-11-11T23:06:07.159Z",
+      "embed": {
+        "$type": "app.bsky.embed.external",
+        "external": {
+          "description": "Bluesky PDS (Personal Data Server) container image, compose file, and documentation - bluesky-social/pds",
+          "thumb": {
+            "$type": "blob",
+            "ref": {
+              "$link": "bafkreicwcswfanybt52jjersamdpdyqydhd555uecwltcod5hoofnmzv6u"
+            },
+            "mimeType": "image/jpeg",
+            "size": 176818
+          },
+          "title": "GitHub - bluesky-social/pds: Bluesky PDS (Personal Data Server) container image, compose file, and documentation",
+          "uri": "https://github.com/bluesky-social/pds"
+        }
+      },
+      "langs": [
+        "en"
+      ],
+      "reply": {
+        "parent": {
+          "cid": "bafyreihuozejrmlvsufm7xw4ugdaplgcof4wnzuebpqd4wzzyue32hsviq",
+          "uri": "at://did:plc:23gw3yye5avo6vhn3dyowi2b/app.bsky.feed.post/3lapgh65u5k2u"
+        },
+        "root": {
+          "cid": "bafyreiguzubzibua5tdtgbvznndyblkztdgwfvbhtckw7vmkxulf3ecx6q",
+          "uri": "at://did:plc:k6acu4chiwkixvdedcmdgmal/app.bsky.feed.post/3lapdsadfiq22"
+        }
+      },
+      "text": "it’s where your posts are stored on here. \nyou can even self host it if you want to."
+    }
+  }
+}
