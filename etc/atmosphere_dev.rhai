@@ -6,11 +6,13 @@ if rtype != "app.bsky.feed.post" {
 
 const BAIL = [
   // For obvious reasons, keep the feed to PG
-  "nsfw",
+  "nsfw", "porn",
   // Used a lot with tags like "dogsofbluesky"
   "ofbluesky",
   "ofbsky",
 ];
+
+let score = 0;
 
 const KEYWORDS = [
   ["atproto"],
@@ -18,6 +20,7 @@ const KEYWORDS = [
   ["pds"],
   ["jetstream"],
   ["firehose"],
+  ["bluesky", "infra"],
 ];
 const TAGS = [
   ["atproto"],
@@ -45,7 +48,7 @@ for token in BAIL {
 
 for needle in KEYWORDS {
   if sequence_matches(needle, text_normalized) {
-    return build_aturi(event);
+    score += 1;
   }
 }
 
@@ -53,7 +56,7 @@ let embed_external_url = event?.commit?.record?.embed?.external?.uri ?? "";
 if !embed_external_url.is_empty() {
   for needle in URLS {
     if embed_external_url.starts_with(needle) {
-      return build_aturi(event);
+      score += 1;
     }
   }
 }
@@ -68,7 +71,7 @@ for facet in event?.commit?.record?.facets ?? [] {
         if !link.is_empty() {
           for needle in URLS {
             if link.starts_with(needle) {
-              return build_aturi(event);
+              score += 1;
             }
           }
         }
@@ -83,7 +86,7 @@ for facet in event?.commit?.record?.facets ?? [] {
         }
         for needle in TAGS {
           if sequence_matches(needle, tag_normalized) {
-            return build_aturi(event);
+            score += 1;
           }
         }
       }
@@ -92,5 +95,8 @@ for facet in event?.commit?.record?.facets ?? [] {
   }
 }
 
+if score > 0 {
+  return build_aturi(event);
+}
 
 false
