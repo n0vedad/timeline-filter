@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::env;
 use supercell::cache::Cache;
 use supercell::cache::CacheTask;
+use supercell::cleanup::CleanTask;
 use supercell::vmc::VerificationMethodCacheTask;
 use tokio::net::TcpListener;
 use tokio::signal;
@@ -149,6 +150,7 @@ async fn main() -> Result<()> {
             });
         }
     }
+
     {
         let inner_config = config.clone();
         let task_enable = *inner_config.cache_task_enable.as_ref();
@@ -164,7 +166,25 @@ async fn main() -> Result<()> {
             let interval = *inner_config.cache_task_interval.as_ref();
             tracker.spawn(async move {
                 if let Err(err) = task.run_background(interval).await {
-                    tracing::warn!(error = ?err, "consumer task error");
+                    tracing::warn!(error = ?err, "cache task error");
+                }
+                inner_token.cancel();
+            });
+        }
+    }
+
+    {
+        let inner_config = config.clone();
+        let task_enable = *inner_config.cleanup_task_enable.as_ref();
+        let max_age = *inner_config.cleanup_task_max_age.as_ref();
+        if task_enable {
+            let task = CleanTask::new(pool.clone(), max_age, token.clone());
+            task.main().await?;
+            let inner_token = token.clone();
+            let interval = *inner_config.cleanup_task_interval.as_ref();
+            tracker.spawn(async move {
+                if let Err(err) = task.run_background(interval).await {
+                    tracing::warn!(error = ?err, "cleanup task error");
                 }
                 inner_token.cancel();
             });

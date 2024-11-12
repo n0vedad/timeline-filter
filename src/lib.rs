@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod cleanup;
 pub mod config;
 pub mod consumer;
 pub mod crypto;

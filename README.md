@@ -16,6 +16,11 @@ The following environment variables are used:
 * `ZSTD_DICTIONARY` - The path to the ZSTD dictionary to use. Required when compression is enabled.
 * `CONSUMER_TASK_ENABLE` - Whether or not to enable the consumer tasks. Default `true`.
 * `VMC_TASK_ENABLE` - Whether or not to enable the VMC (verification method cache) tasks. Default `true`.
+* `CACHE_TASK_ENABLE` - Whether or not to enable the cache tasks. Default `true`.
+* `CACHE_TASK_INTERVAL` - The interval to run the cache tasks. Default `3m`.
+* `CLEANUP_TASK_ENABLE` - Whether or not to enable the cleanup tasks. Default `true`.
+* `CLEANUP_TASK_INTERVAL` - The interval to run the cleanup tasks. Default `1h`.
+* `CLEANUP_TASK_MAX_AGE` - The maximum age of a post before it is considered stale and deleted from storage. Default `48h`.
 * `PLC_HOSTNAME` - The hostname of the PLC server to use for VMC tasks. Default `plc.directory`.
 * `FEEDS` - The path to the feeds configuration file.
 * `COLLECTIONS` - The collections to consume. Default `app.bsky.feed.post`.

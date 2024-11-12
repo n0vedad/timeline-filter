@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
-use supercell::matcher::RhaiMatcher;
 use supercell::matcher::Matcher;
+use supercell::matcher::RhaiMatcher;
 
 fn main() -> Result<()> {
     let mut rhai_input_path: Option<String> = None;
@@ -29,8 +29,7 @@ fn main() -> Result<()> {
     let value: serde_json::Value =
         serde_json::from_slice(&json_content).context("parsing input_json failed")?;
 
-    let matcher = RhaiMatcher::new(&rhai_input_path)
-                    .context("could not construct matcher")?;
+    let matcher = RhaiMatcher::new(&rhai_input_path).context("could not construct matcher")?;
     let result = matcher.matches(&value)?;
 
     let result = result.ok_or(anyhow!("no matches found"))?;

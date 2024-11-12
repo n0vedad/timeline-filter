@@ -118,6 +118,9 @@ pub struct Config {
     pub consumer_task_enable: TaskEnable,
     pub cache_task_enable: TaskEnable,
     pub cache_task_interval: TaskInterval,
+    pub cleanup_task_enable: TaskEnable,
+    pub cleanup_task_interval: TaskInterval,
+    pub cleanup_task_max_age: TaskInterval,
     pub vmc_task_enable: TaskEnable,
     pub plc_hostname: String,
     pub user_agent: String,
@@ -156,6 +159,15 @@ impl Config {
         let cache_task_interval: TaskInterval =
             default_env("CACHE_TASK_INTERVAL", "3m").try_into()?;
 
+        let cleanup_task_enable: TaskEnable =
+            default_env("CLEANUP_TASK_ENABLE", "true").try_into()?;
+
+        let cleanup_task_interval: TaskInterval =
+            default_env("CLEANUP_TASK_INTERVAL", "1h").try_into()?;
+
+        let cleanup_task_max_age: TaskInterval =
+            default_env("CLEANUP_TASK_MAX_AGE", "48h").try_into()?;
+
         let vmc_task_enable: TaskEnable = default_env("VMC_TASK_ENABLE", "true").try_into()?;
 
         let plc_hostname = default_env("PLC_HOSTNAME", "plc.directory");
@@ -181,6 +193,9 @@ impl Config {
             consumer_task_enable,
             cache_task_enable,
             cache_task_interval,
+            cleanup_task_enable,
+            cleanup_task_interval,
+            cleanup_task_max_age,
             vmc_task_enable,
             plc_hostname,
             user_agent,

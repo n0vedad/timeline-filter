@@ -78,74 +78,6 @@ pub async fn feed_content_update(pool: &StoragePool, feed_content: &FeedContent)
     tx.commit().await.context("failed to commit transaction")
 }
 
-pub async fn feed_content_paginate(
-    pool: &StoragePool,
-    feed_uri: &str,
-    limit: Option<u16>,
-    cursor: Option<i64>,
-) -> Result<Vec<FeedContent>> {
-    let mut tx = pool.begin().await.context("failed to begin transaction")?;
-
-    let limit = limit.unwrap_or(20).clamp(1, 100);
-
-    let results = if let Some(indexed_at) = cursor {
-        let query = "SELECT * FROM feed_content WHERE feed_id = ? AND indexed_at < ? ORDER BY indexed_at DESC LIMIT ?";
-
-        sqlx::query_as::<_, FeedContent>(query)
-            .bind(feed_uri)
-            .bind(indexed_at)
-            .bind(limit)
-            .fetch_all(tx.as_mut())
-            .await?
-    } else {
-        let query = "SELECT * FROM feed_content WHERE feed_id = ? ORDER BY indexed_at DESC LIMIT ?";
-
-        sqlx::query_as::<_, FeedContent>(query)
-            .bind(feed_uri)
-            .bind(limit)
-            .fetch_all(tx.as_mut())
-            .await?
-    };
-
-    tx.commit().await.context("failed to commit transaction")?;
-
-    Ok(results)
-}
-
-pub async fn feed_content_paginate_popular(
-    pool: &StoragePool,
-    feed_uri: &str,
-    limit: Option<u16>,
-    cursor: Option<i64>,
-) -> Result<Vec<FeedContent>> {
-    let mut tx = pool.begin().await.context("failed to begin transaction")?;
-
-    let limit = limit.unwrap_or(20).clamp(1, 100);
-
-    let results = if let Some(indexed_at) = cursor {
-        let query = "SELECT * FROM feed_content WHERE feed_id = ? AND indexed_at < ? ORDER BY indexed_at DESC LIMIT ?";
-
-        sqlx::query_as::<_, FeedContent>(query)
-            .bind(feed_uri)
-            .bind(indexed_at)
-            .bind(limit)
-            .fetch_all(tx.as_mut())
-            .await?
-    } else {
-        let query = "SELECT * FROM feed_content WHERE feed_id = ? ORDER BY indexed_at DESC LIMIT ?";
-
-        sqlx::query_as::<_, FeedContent>(query)
-            .bind(feed_uri)
-            .bind(limit)
-            .fetch_all(tx.as_mut())
-            .await?
-    };
-
-    tx.commit().await.context("failed to commit transaction")?;
-
-    Ok(results)
-}
-
 pub async fn feed_content_cached(
     pool: &StoragePool,
     feed_uri: &str,
@@ -245,22 +177,15 @@ pub async fn verification_method_get(pool: &StoragePool, did: &str) -> Result<Op
     Ok(result)
 }
 
-pub async fn feed_content_truncate(pool: &StoragePool, feed_id: &str) -> Result<()> {
+pub async fn feed_content_truncate_oldest(pool: &StoragePool, age: DateTime<Utc>) -> Result<()> {
     let mut tx = pool.begin().await.context("failed to begin transaction")?;
 
-    let result = sqlx::query_scalar::<_, DateTime<Utc>>("SELECT updated_at FROM feed_content WHERE feed_id = ? ORDER BY indexed_at DESC LIMIT 1 OFFSET 501")
-        .bind(feed_id)
-        .fetch_optional(tx.as_mut())
-        .await.context("failed select feed content mark record")?;
-
-    if let Some(updated_at) = result {
-        sqlx::query("DELETE FROM feed_content WHERE feed_id = ? AND updated_at < ?")
-            .bind(feed_id)
-            .bind(updated_at)
-            .execute(tx.as_mut())
-            .await
-            .context("failed to delete feed content beyond mark")?;
-    }
+    // TODO: This might need an index.
+    sqlx::query("DELETE FROM feed_content WHERE updated_at < ?")
+        .bind(age)
+        .execute(tx.as_mut())
+        .await
+        .context("failed to delete feed content beyond mark")?;
 
     tx.commit().await.context("failed to commit transaction")
 }

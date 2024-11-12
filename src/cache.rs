@@ -6,14 +6,14 @@ use tokio_util::sync::CancellationToken;
 
 use crate::storage::{feed_content_cached, StoragePool};
 
-pub(crate) struct InnerCache {
-    pub(crate) page_size: u8,
-    pub(crate) cached_feeds: HashMap<String, Vec<Vec<String>>>,
+pub struct InnerCache {
+    page_size: u8,
+    cached_feeds: HashMap<String, Vec<Vec<String>>>,
 }
 
 #[derive(Clone)]
 pub struct Cache {
-    pub(crate) inner_cache: Arc<RwLock<InnerCache>>,
+    pub inner_cache: Arc<RwLock<InnerCache>>,
 }
 
 impl Default for InnerCache {
@@ -75,11 +75,11 @@ impl Cache {
 }
 
 pub struct CacheTask {
-    pub(crate) pool: StoragePool,
-    pub(crate) cache: Cache,
-    pub(crate) config: crate::config::Config,
+    pub pool: StoragePool,
+    pub cache: Cache,
+    pub config: crate::config::Config,
 
-    pub(crate) cancellation_token: CancellationToken,
+    pub cancellation_token: CancellationToken,
 }
 
 impl CacheTask {
@@ -169,8 +169,6 @@ impl CacheTask {
             .collect::<Vec<(f64, String, i64)>>();
 
         scored_posts.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
-
-        println!("{:?}", scored_posts);
 
         let sorted_posts = scored_posts.iter().map(|post| post.1.clone()).collect();
 
