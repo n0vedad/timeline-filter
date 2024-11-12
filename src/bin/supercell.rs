@@ -62,9 +62,14 @@ async fn main() -> Result<()> {
         .flat_map(|(_, (_, allow))| allow.iter().cloned())
         .collect::<HashSet<String>>();
 
-    let cache = Cache::default();
+    let cache = Cache::new(20);
 
-    let web_context = WebContext::new(pool.clone(), config.external_base.as_str(), feeds, cache.clone());
+    let web_context = WebContext::new(
+        pool.clone(),
+        config.external_base.as_str(),
+        feeds,
+        cache.clone(),
+    );
 
     let app = build_router(web_context.clone());
 

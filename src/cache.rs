@@ -43,7 +43,7 @@ impl InnerCache {
 }
 
 impl Cache {
-    pub(crate) fn new(page_size: u8) -> Self {
+    pub fn new(page_size: u8) -> Self {
         Self {
             inner_cache: Arc::new(RwLock::new(InnerCache::new(page_size))),
         }
@@ -54,13 +54,14 @@ impl Cache {
 
         let feed_chunks = inner.cached_feeds.get(feed_id)?;
 
-        if page as usize > feed_chunks.len() {
+        if page > feed_chunks.len() {
             return None;
         }
 
         feed_chunks.get(page).cloned()
     }
 
+    #[allow(clippy::ptr_arg)]
     pub(crate) async fn update_feed(&self, feed_id: &str, posts: &Vec<String>) {
         let mut inner = self.inner_cache.write().await;
 
@@ -136,7 +137,6 @@ impl CacheTask {
                         .generate_popular(&feed.uri, gravity, *limit.as_ref())
                         .await
                     {
-
                         tracing::error!(error = ?err, feed_uri = ?feed.uri, "failed to generate simple feed");
                     }
                 }

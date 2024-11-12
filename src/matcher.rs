@@ -2,7 +2,9 @@ use anyhow::{anyhow, Context, Result};
 
 use serde_json_path::JsonPath;
 
-use rhai::{serde::to_dynamic, CustomType, Dynamic, Engine, Scope, TypeBuilder, AST};
+use rhai::{
+    serde::to_dynamic, Array, CustomType, Dynamic, Engine, ImmutableString, Scope, TypeBuilder, AST,
+};
 use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use crate::config;
@@ -276,6 +278,35 @@ impl Matcher for SequenceMatcher {
     }
 }
 
+pub fn matcher_sequence_matches(sequence: Array, text: ImmutableString) -> bool {
+    let sequence = sequence
+        .iter()
+        .filter_map(|value| value.clone().try_cast::<String>())
+        .collect::<Vec<String>>();
+    sequence_matches(sequence.as_ref(), &text)
+}
+
+fn sequence_matches(sequence: &[String], text: &str) -> bool {
+    let mut last_found: i32 = -1;
+
+    let mut found_index = 0;
+    for (index, expected) in sequence.iter().enumerate() {
+        if let Some(current_found) = text.find(expected) {
+            if (current_found as i32) > last_found {
+                last_found = current_found as i32;
+                found_index = index;
+            } else {
+                last_found = -1;
+                break;
+            }
+        } else {
+            last_found = -1;
+            break;
+        }
+    }
+    last_found != -1 && found_index == sequence.len() - 1
+}
+
 fn extract_aturi(aturi: Option<&JsonPath>, event_value: &serde_json::Value) -> Option<String> {
     if let Some(aturi_path) = aturi {
         let nodes = aturi_path.query(event_value).all();
@@ -358,6 +389,7 @@ impl RhaiMatcher {
         engine
             .build_type::<Match>()
             .register_fn("build_aturi", build_aturi)
+            .register_fn("sequence_matches", matcher_sequence_matches)
             .register_fn("update_match", Match::update)
             .register_fn("upsert_match", Match::upsert);
         let ast = engine
@@ -680,6 +712,11 @@ mod tests {
                         "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadb7behk25",
                     ),
                     ("rhai_match_reply_root.rhai", false, ""),
+                    (
+                        "rhai_match_sequence.rhai",
+                        true,
+                        "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadb7behk25",
+                    ),
                 ],
             ),
             (

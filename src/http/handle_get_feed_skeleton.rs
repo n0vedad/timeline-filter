@@ -103,7 +103,9 @@ pub async fn handle_get_feed_skeleton(
         }
     }
 
-    let parsed_cursor = parse_cursor(feed_params.cursor).map(|value| value.clamp(0, 10000)).unwrap_or(0) as usize;
+    let parsed_cursor = parse_cursor(feed_params.cursor)
+        .map(|value| value.clamp(0, 10000))
+        .unwrap_or(0) as usize;
 
     let posts = web_context.cache.get_posts(&feed_uri, parsed_cursor).await;
 
@@ -119,10 +121,10 @@ pub async fn handle_get_feed_skeleton(
     }
     let posts = posts.unwrap();
 
-    let cursor = if posts.len() != 0 {
-        Some((parsed_cursor + 1).to_string())
-    } else {
+    let cursor = if posts.is_empty() {
         Some(parsed_cursor.to_string())
+    } else {
+        Some((parsed_cursor + 1).to_string())
     };
 
     let feed_item_views = posts
