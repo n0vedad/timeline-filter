@@ -481,6 +481,21 @@ fn build_aturi_maybe(event: Dynamic) -> Result<String> {
                 rkey.as_str()
             ))
         }
+        "app.bsky.feed.like" => {
+            let subject = record
+                .get("subject")
+                .ok_or(anyhow!("no subject on event commit record"))?
+                .as_map_ref()
+                .map_err(|err| anyhow!(err))?;
+            let uri = subject
+                .get("uri")
+                .ok_or(anyhow!("no uri on event commit record subject"))?
+                .as_immutable_string_ref()
+                .map_err(|err| anyhow!(err))?;
+
+            Ok(uri.to_string())
+        }
+
         _ => Err(anyhow!("no aturi for event")),
     }
 }
