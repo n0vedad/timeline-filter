@@ -717,6 +717,11 @@ mod tests {
                         true,
                         "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadb7behk25",
                     ),
+                    (
+                        "rhai_match_links.rhai",
+                        true,
+                        "at://did:plc:cbkjy5n7bk3ax2wplmtjofq2/app.bsky.feed.post/3laadb7behk25",
+                    ),
                 ],
             ),
             (
