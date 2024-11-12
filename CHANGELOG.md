@@ -1,3 +1,21 @@
+## [0.4.0] - 2024-11-12
+
+### Added
+
+- Adding sequence matcher helper
+
+### Changed
+
+- Cleaned up and refactored matchers
+- Score can be incremented
+- Feed caching
+- Added dropsonde to test rhai scripts
+- Setting version to 0.4.0
+
+### Fixed
+
+- Adding test for rhai link matching
+
 ## [0.3.1] - 2024-11-09
 
 ### Changed
@@ -5,6 +23,7 @@
 - Cleaning up changelog
 - Adding value context to at-uri compose errors
 - Setting version to 0.3.1
+- 0.3.1
 
 ## [0.3.0] - 2024-11-09
 
@@ -69,6 +88,7 @@
 - Setting version to 0.1.1
 - 0.1.1
 
+[0.4.0]: https://github.com/astrenoxcoop/supercell/compare/0.3.1..0.4.0
 [0.3.1]: https://github.com/astrenoxcoop/supercell/compare/0.3.0..0.3.1
 [0.3.0]: https://github.com/astrenoxcoop/supercell/compare/0.2.0..0.3.0
 [0.2.0]: https://github.com/astrenoxcoop/supercell/compare/0.1.2..0.2.0
