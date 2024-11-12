@@ -7,6 +7,7 @@ use model::FeedContent;
 pub type StoragePool = Pool<Sqlite>;
 
 pub mod model {
+    use chrono::{DateTime, SubsecRound};
     use serde::Serialize;
     use sqlx::prelude::FromRow;
 
@@ -16,6 +17,19 @@ pub mod model {
         pub uri: String,
         pub indexed_at: i64,
         pub score: i32,
+    }
+
+    impl FeedContent {
+        pub(crate) fn age_in_hours(&self, now: i64) -> i64 {
+            let target = DateTime::from_timestamp_micros(self.indexed_at)
+                .map(|value| value.trunc_subsecs(0).timestamp());
+            if target.is_none() {
+                return 1;
+            }
+            let target = target.unwrap();
+            let diff_seconds = now - target;
+            std::cmp::max((diff_seconds / (60 * 60)) + 1, 1)
+        }
     }
 }
 
@@ -126,6 +140,26 @@ pub async fn feed_content_paginate_popular(
             .fetch_all(tx.as_mut())
             .await?
     };
+
+    tx.commit().await.context("failed to commit transaction")?;
+
+    Ok(results)
+}
+
+pub async fn feed_content_cached(
+    pool: &StoragePool,
+    feed_uri: &str,
+    limit: u32,
+) -> Result<Vec<FeedContent>> {
+    let mut tx = pool.begin().await.context("failed to begin transaction")?;
+
+    let query = "SELECT * FROM feed_content WHERE feed_id = ? ORDER BY indexed_at DESC LIMIT ?";
+
+    let results = sqlx::query_as::<_, FeedContent>(query)
+        .bind(feed_uri)
+        .bind(limit)
+        .fetch_all(tx.as_mut())
+        .await?;
 
     tx.commit().await.context("failed to commit transaction")?;
 
@@ -244,7 +278,7 @@ mod tests {
             indexed_at: 1730673934229172_i64,
             score: 1,
         };
-        super::feed_content_insert(&pool, &record)
+        super::feed_content_upsert(&pool, &record)
             .await
             .expect("failed to insert record");
 

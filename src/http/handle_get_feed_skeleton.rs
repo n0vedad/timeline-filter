@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::errors::SupercellError;
-use crate::storage::feed_content_paginate;
 use crate::storage::{verification_method_get, StoragePool};
 
 use crate::crypto::{validate, JwtClaims, JwtHeader};
@@ -104,24 +103,32 @@ pub async fn handle_get_feed_skeleton(
         }
     }
 
-    let parsed_cursor = parse_cursor(feed_params.cursor);
-    let feed_items = feed_content_paginate(
-        &web_context.pool,
-        &feed_uri,
-        feed_params.limit,
-        parsed_cursor,
-    )
-    .await?;
+    let parsed_cursor = parse_cursor(feed_params.cursor).map(|value| value.clamp(0, 10000)).unwrap_or(0) as usize;
 
-    let cursor = feed_items
-        .iter()
-        .last()
-        .map(|last_feed_item| last_feed_item.indexed_at.to_string());
+    let posts = web_context.cache.get_posts(&feed_uri, parsed_cursor).await;
 
-    let feed_item_views = feed_items
+    if posts.is_none() {
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "UnknownFeed",
+                "message": "unknown feed",
+            })),
+        )
+            .into_response());
+    }
+    let posts = posts.unwrap();
+
+    let cursor = if posts.len() != 0 {
+        Some((parsed_cursor + 1).to_string())
+    } else {
+        Some(parsed_cursor.to_string())
+    };
+
+    let feed_item_views = posts
         .iter()
         .map(|feed_item| FeedItemView {
-            post: feed_item.uri.clone(),
+            post: feed_item.clone(),
         })
         .collect::<Vec<_>>();
 

@@ -3,6 +3,8 @@ use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::env;
+use supercell::cache::Cache;
+use supercell::cache::CacheTask;
 use supercell::vmc::VerificationMethodCacheTask;
 use tokio::net::TcpListener;
 use tokio::signal;
@@ -60,7 +62,9 @@ async fn main() -> Result<()> {
         .flat_map(|(_, (_, allow))| allow.iter().cloned())
         .collect::<HashSet<String>>();
 
-    let web_context = WebContext::new(pool.clone(), config.external_base.as_str(), feeds);
+    let cache = Cache::default();
+
+    let web_context = WebContext::new(pool.clone(), config.external_base.as_str(), feeds, cache.clone());
 
     let app = build_router(web_context.clone());
 
@@ -134,6 +138,27 @@ async fn main() -> Result<()> {
             let inner_token = token.clone();
             tracker.spawn(async move {
                 if let Err(err) = task.run_background(chrono::Duration::hours(4)).await {
+                    tracing::warn!(error = ?err, "consumer task error");
+                }
+                inner_token.cancel();
+            });
+        }
+    }
+    {
+        let inner_config = config.clone();
+        let task_enable = *inner_config.cache_task_enable.as_ref();
+        if task_enable {
+            let task = CacheTask::new(
+                pool.clone(),
+                cache.clone(),
+                inner_config.clone(),
+                token.clone(),
+            );
+            task.main().await?;
+            let inner_token = token.clone();
+            let interval = *inner_config.cache_task_interval.as_ref();
+            tracker.spawn(async move {
+                if let Err(err) = task.run_background(interval).await {
                     tracing::warn!(error = ?err, "consumer task error");
                 }
                 inner_token.cancel();

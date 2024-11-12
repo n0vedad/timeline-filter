@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::storage::StoragePool;
+use crate::{cache::Cache, storage::StoragePool};
 
 #[derive(Clone, Debug)]
 pub(crate) struct FeedControl {
@@ -17,6 +17,7 @@ pub struct InnerWebContext {
     pub(crate) pool: StoragePool,
     pub(crate) external_base: String,
     pub(crate) feeds: HashMap<String, FeedControl>,
+    pub(crate) cache: Cache,
 }
 
 #[derive(Clone, FromRef)]
@@ -35,6 +36,7 @@ impl WebContext {
         pool: StoragePool,
         external_base: &str,
         feeds: HashMap<String, (Option<String>, HashSet<String>)>,
+        cache: Cache,
     ) -> Self {
         let feeds = feeds
             .into_iter()
@@ -44,6 +46,7 @@ impl WebContext {
             pool,
             external_base: external_base.to_string(),
             feeds,
+            cache,
         }))
     }
 }

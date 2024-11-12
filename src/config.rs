@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 use std::str::FromStr;
 
 use anyhow::{anyhow, Result};
+use chrono::Duration;
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
@@ -13,18 +14,30 @@ pub struct Feeds {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct FeedQueryLimit(pub u32);
+
+impl Default for FeedQueryLimit {
+    fn default() -> Self {
+        FeedQueryLimit(500)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum FeedQuery {
     #[serde(rename = "simple")]
-    Simple {},
+    Simple {
+        #[serde(default)]
+        limit: FeedQueryLimit,
+    },
 
     #[serde(rename = "popular")]
     Popular {
         #[serde(default)]
-        age_floor: i64,
+        gravity: f64,
 
         #[serde(default)]
-        gravity: f64,
+        limit: FeedQueryLimit,
     },
 }
 
@@ -87,6 +100,9 @@ pub struct CertificateBundles(Vec<String>);
 pub struct TaskEnable(bool);
 
 #[derive(Clone)]
+pub struct TaskInterval(Duration);
+
+#[derive(Clone)]
 pub struct Compression(bool);
 
 #[derive(Clone)]
@@ -100,6 +116,8 @@ pub struct Config {
     pub database_url: String,
     pub certificate_bundles: CertificateBundles,
     pub consumer_task_enable: TaskEnable,
+    pub cache_task_enable: TaskEnable,
+    pub cache_task_interval: TaskInterval,
     pub vmc_task_enable: TaskEnable,
     pub plc_hostname: String,
     pub user_agent: String,
@@ -133,6 +151,11 @@ impl Config {
         let consumer_task_enable: TaskEnable =
             default_env("CONSUMER_TASK_ENABLE", "true").try_into()?;
 
+        let cache_task_enable: TaskEnable = default_env("CACHE_TASK_ENABLE", "true").try_into()?;
+
+        let cache_task_interval: TaskInterval =
+            default_env("CACHE_TASK_INTERVAL", "3m").try_into()?;
+
         let vmc_task_enable: TaskEnable = default_env("VMC_TASK_ENABLE", "true").try_into()?;
 
         let plc_hostname = default_env("PLC_HOSTNAME", "plc.directory");
@@ -156,6 +179,8 @@ impl Config {
             database_url,
             certificate_bundles,
             consumer_task_enable,
+            cache_task_enable,
+            cache_task_interval,
             vmc_task_enable,
             plc_hostname,
             user_agent,
@@ -247,6 +272,21 @@ impl TryFrom<String> for TaskEnable {
     }
 }
 
+impl AsRef<Duration> for TaskInterval {
+    fn as_ref(&self) -> &Duration {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for TaskInterval {
+    type Error = anyhow::Error;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let duration = duration_str::parse_chrono(&value)
+            .map_err(|err| anyhow!(err).context("parsing task interval into duration failed"))?;
+        Ok(Self(duration))
+    }
+}
+
 impl AsRef<bool> for Compression {
     fn as_ref(&self) -> &bool {
         &self.0
@@ -302,7 +342,9 @@ impl AsRef<Vec<String>> for Collections {
 
 impl Default for FeedQuery {
     fn default() -> Self {
-        FeedQuery::Simple {}
+        FeedQuery::Simple {
+            limit: FeedQueryLimit::default(),
+        }
     }
 }
 
@@ -311,10 +353,12 @@ impl FromStr for FeedQuery {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "simple" => Ok(FeedQuery::Simple {}),
+            "simple" => Ok(FeedQuery::Simple {
+                limit: FeedQueryLimit::default(),
+            }),
             "popular" => Ok(FeedQuery::Popular {
-                age_floor: 0,
-                gravity: 2.0,
+                gravity: 1.8,
+                limit: FeedQueryLimit::default(),
             }),
             _ => Err(anyhow!("unsupported query")),
         }
@@ -354,4 +398,10 @@ where
     }
 
     deserializer.deserialize_any(StringOrStruct(PhantomData))
+}
+
+impl AsRef<u32> for FeedQueryLimit {
+    fn as_ref(&self) -> &u32 {
+        &self.0
+    }
 }
