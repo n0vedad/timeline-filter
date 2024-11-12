@@ -4,25 +4,32 @@ if rtype != "app.bsky.feed.post" {
   return false;
 }
 
-const SEARCH = [
+const KEYWORDS = [
+  ["atproto"],
+  ["feed", "generator"],
+  ["pds"],
+  ["jetstream"],
+  ["firehose"],
+];
+const TAGS = [
+  ["atproto"],
+  ["feed", "generator"],
+  ["pds"],
   ["bluesky"],
   ["bsky"],
-  ["atproto"],
   ["atmosphere"],
-  ["feed", "generator"],
-  ["at proto"],
-  ["pds"],
 ];
 
 const URLS = [
   "https://atproto.com/",
   "https://github.com/bluesky-social/",
+  "https://docs.bsky.app/",
 ];
 
 let text = event?.commit?.record?.text ?? "";
 let text_normalized = text.to_lower();
 
-for needle in SEARCH {
+for needle in KEYWORDS {
   if sequence_matches(needle, text_normalized) {
     return build_aturi(event);
   }
@@ -55,7 +62,7 @@ for facet in event?.commit?.record?.facets ?? [] {
       "app.bsky.richtext.facet#tag" => {
         let tag = feature?["tag"] ?? "";
         let tag_normalized = tag.to_lower();
-        for needle in SEARCH {
+        for needle in TAGS {
           if sequence_matches(needle, tag_normalized) {
             return build_aturi(event);
           }
