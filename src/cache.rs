@@ -162,7 +162,7 @@ impl CacheTask {
             .map(|post| {
                 let age = post.age_in_hours(now);
 
-                let score = ((post.score - 1).min(0) as f64) / ((2 + age) as f64).powf(gravity);
+                let score = ((post.score - 1).max(0) as f64) / ((2 + age) as f64).powf(gravity);
 
                 (score, post.uri.clone(), age)
             })
