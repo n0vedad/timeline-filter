@@ -1,3 +1,13 @@
+## [0.4.2] - 2024-11-13
+
+### Changed
+
+- Setting version to 0.4.2
+
+### Fixed
+
+- Fixed min/max typo that floored score to 0
+
 ## [0.4.1] - 2024-11-12
 
 ### Added
@@ -12,6 +22,7 @@
 - Cleanup task as part of data retention policy
 - Updating atmosphere_dev feed matcher to calc score
 - Setting version to 0.4.1
+- 0.4.1
 
 ## [0.4.0] - 2024-11-12
 
@@ -104,6 +115,7 @@
 - Setting version to 0.1.1
 - 0.1.1
 
+[0.4.2]: https://github.com/astrenoxcoop/supercell/compare/0.4.1..0.4.2
 [0.4.1]: https://github.com/astrenoxcoop/supercell/compare/0.4.0..0.4.1
 [0.4.0]: https://github.com/astrenoxcoop/supercell/compare/0.3.1..0.4.0
 [0.3.1]: https://github.com/astrenoxcoop/supercell/compare/0.3.0..0.3.1
