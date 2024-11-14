@@ -10,7 +10,7 @@ if rtype != "app.bsky.feed.post" {
 
 const BAIL = [
   // For obvious reasons, keep the feed to PG
-  "nsfw", "porn",
+  "nsfw", "porn", "nsfl",
   // Used a lot with tags like "dogsofbluesky"
   "ofbluesky",
   "ofbsky",
@@ -20,14 +20,11 @@ const BAIL = [
   "art", "illustration",
 ];
 
-const LIKELY_DIDS = [
+const DIDS = [
   "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
   "did:plc:oc6vwdlmk2kqyida5i74d3p5",
   "did:plc:lehcqqkwzcwvjvw66uthu5oq",
   "did:plc:z72i7hdynmk6r22z27h6tvur",
-];
-
-const MAYBE_DIDS = [
   "did:plc:q6gjnaw2blty4crticxkmujt",
   "did:plc:oky5czdrnfjpqslsw2a5iclo",
   "did:plc:ragtjsm2j2vknwkz3zp4oxrd",
@@ -44,16 +41,20 @@ const KEYWORDS = [
   [["pds"], 0.5],
   [["jetstream"], 0.5],
   [["firehose"], 0.5],
+  [["lexicon"], 0.5],
+  [["activitypub"], 0.5],
+  [["federation"], 0.5],
+  [["fediverse"], 0.5],
+  [["handle"], 0.3],
+  [["domain"], 0.3],
+  [["mastodon"], 0.3],
   [["bluesky", "infra"], 2.0],
 ];
 const TAGS = [
-  ["atproto"],
-  ["feed", "generator"],
-  ["pds"],
-  ["atmosphere"],
-  ["atrium-rs"],
-  ["supercell"],
-  ["smokesignal"],
+  ["atproto", 2.0],
+  ["atprotocol", 2.0],
+  ["pds", 0.5],
+  ["atmosphere", 0.5],
 ];
 
 const URLS = [
@@ -86,18 +87,13 @@ if !embed_external_url.is_empty() {
   }
 }
 
-let links = [];
-let tags = [];
 for facet in event?.commit?.record?.facets ?? [] {
   for feature in facet?.features ?? [] {
     switch feature?["$type"] {
       "app.bsky.richtext.facet#mention" => {
         let mention = feature?["did"] ?? "";
         if !mention.is_empty() {
-          if mention in LIKELY_DIDS {
-              score += 1.0;
-          }
-          if mention in MAYBE_DIDS {
+          if mention in DIDS {
               score += 0.5;
           }
         }
@@ -108,21 +104,25 @@ for facet in event?.commit?.record?.facets ?? [] {
           for needle in URLS {
             if link.starts_with(needle) {
               score += 1.0;
+              break;
             }
           }
         }
       }
       "app.bsky.richtext.facet#tag" => {
         let tag = feature?["tag"] ?? "";
-        let tag_normalized = tag.to_lower();
-        for token in BAIL {
-          if token in tag_normalized {
-            return false;
+        if !tag.is_empty() {
+          let tag_normalized = tag.to_lower();
+          for token in BAIL {
+            if token in tag_normalized {
+              return false;
+            }
           }
-        }
-        for needle in TAGS {
-          if sequence_matches(needle, tag_normalized) {
-            score += 1.0;
+          for needle in TAGS {
+            if needle[0] == tag_normalized {
+              score += needle[1];
+              break;
+            }
           }
         }
       }
