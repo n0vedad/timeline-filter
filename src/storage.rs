@@ -207,7 +207,7 @@ mod tests {
             .await
             .expect("failed to insert record");
 
-        let records = super::feed_content_paginate(&pool, "feed", None, None)
+        let records = super::feed_content_cached(&pool, "feed", 5)
             .await
             .expect("failed to paginate records");
 

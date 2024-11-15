@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 
+use chrono::{DateTime, Utc};
 use serde_json_path::JsonPath;
 
 use rhai::{
@@ -149,6 +150,34 @@ impl Matcher for EqualsMatcher {
             Ok(None)
         }
     }
+}
+
+pub fn matcher_before_duration(duration: &str, date: &str) -> bool {
+    let parsed_date = DateTime::parse_from_rfc3339(date).map(|v| v.with_timezone(&Utc));
+    if let Err(err) = parsed_date {
+        tracing::debug!(error = ?err, "error parsing date");
+        return true;
+    }
+    let (direction, parsed_duration) = if let Some(duration) = duration.strip_prefix('-') {
+        (true, duration_str::parse_chrono(duration))
+    } else {
+        (false, duration_str::parse_chrono(duration))
+    };
+
+    if let Err(err) = parsed_duration {
+        tracing::debug!(error = ?err, "error parsing date");
+        return true;
+    }
+
+    let date = parsed_date.unwrap();
+    let duration = parsed_duration.unwrap();
+    let target = if direction {
+        Utc::now() - duration
+    } else {
+        Utc::now() + duration
+    };
+
+    date < target
 }
 
 pub struct PrefixMatcher {
@@ -390,6 +419,7 @@ impl RhaiMatcher {
             .build_type::<Match>()
             .register_fn("build_aturi", build_aturi)
             .register_fn("sequence_matches", matcher_sequence_matches)
+            .register_fn("matcher_before_duration", matcher_before_duration)
             .register_fn("update_match", Match::update)
             .register_fn("upsert_match", Match::upsert);
         let ast = engine
@@ -790,5 +820,17 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn matcher_before_duration() {
+        assert!(super::matcher_before_duration(
+            "1mon",
+            "2024-11-15T11:05:01.000Z"
+        ));
+        assert!(!super::matcher_before_duration(
+            "-1mon",
+            "2024-11-15T11:05:01.000Z"
+        ));
     }
 }
