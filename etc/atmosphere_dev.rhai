@@ -8,6 +8,12 @@ if rtype != "app.bsky.feed.post" {
   return false;
 }
 
+// Reject posts where the created at is more than 8 days ago.
+// See https://docs.rs/duration-str/latest/duration_str/
+if matcher_before_duration("-8d", event?.commit?.record?.createdAt ?? "") {
+  return false;
+}
+
 const BAIL = [
   // For obvious reasons, keep the feed to PG
   "nsfw", "porn", "nsfl",
