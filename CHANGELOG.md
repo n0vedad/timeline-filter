@@ -1,8 +1,19 @@
+## [0.5.0] - 2024-11-15
+
+### Changed
+
+- Atmosphere dev feed matcher updates
+- Updating atmosphere dev feed
+- Added rhai function to compare dates with duration strings
+- Adding duration based date filter to atmosphere dev feed
+- Setting version to 0.5.0
+
 ## [0.4.2] - 2024-11-13
 
 ### Changed
 
 - Setting version to 0.4.2
+- 0.4.2
 
 ### Fixed
 
@@ -115,6 +126,7 @@
 - Setting version to 0.1.1
 - 0.1.1
 
+[0.5.0]: https://github.com/astrenoxcoop/supercell/compare/0.4.2..0.5.0
 [0.4.2]: https://github.com/astrenoxcoop/supercell/compare/0.4.1..0.4.2
 [0.4.1]: https://github.com/astrenoxcoop/supercell/compare/0.4.0..0.4.1
 [0.4.0]: https://github.com/astrenoxcoop/supercell/compare/0.3.1..0.4.0
