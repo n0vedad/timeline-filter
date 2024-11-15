@@ -1,3 +1,10 @@
+## [0.5.1] - 2024-11-15
+
+### Changed
+
+- Denylist support and admin page
+- Setting version to 0.5.1
+
 ## [0.5.0] - 2024-11-15
 
 ### Changed
@@ -7,6 +14,7 @@
 - Added rhai function to compare dates with duration strings
 - Adding duration based date filter to atmosphere dev feed
 - Setting version to 0.5.0
+- 0.5.0
 
 ## [0.4.2] - 2024-11-13
 
@@ -126,6 +134,7 @@
 - Setting version to 0.1.1
 - 0.1.1
 
+[0.5.1]: https://github.com/astrenoxcoop/supercell/compare/0.5.0..0.5.1
 [0.5.0]: https://github.com/astrenoxcoop/supercell/compare/0.4.2..0.5.0
 [0.4.2]: https://github.com/astrenoxcoop/supercell/compare/0.4.1..0.4.2
 [0.4.1]: https://github.com/astrenoxcoop/supercell/compare/0.4.0..0.4.1
