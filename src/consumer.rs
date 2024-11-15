@@ -16,6 +16,7 @@ use crate::matcher::MatchOperation;
 use crate::storage;
 use crate::storage::consumer_control_get;
 use crate::storage::consumer_control_insert;
+use crate::storage::denylist_exists;
 use crate::storage::feed_content_update;
 use crate::storage::feed_content_upsert;
 use crate::storage::StoragePool;
@@ -178,9 +179,19 @@ impl ConsumerTask {
                     }
                     let event_value = event_value.unwrap();
 
-                    for feed_matcher in self.feed_matchers.0.iter() {
+                    // Assumption: Performing a query for each event will cost more in the
+                    // long-term than evaluating each event against all matchers and if there's a
+                    // match, then checking both the event DID and the AT-URI DID.
+                    'matchers_loop: for feed_matcher in self.feed_matchers.0.iter() {
                         if let Some(Match(op, aturi)) = feed_matcher.matches(&event_value) {
                             tracing::debug!(feed_id = ?feed_matcher.feed, "matched event");
+
+                            let aturi_did = did_from_aturi(&aturi);
+                            let dids = vec![event.did.as_str(), aturi_did.as_str()];
+                            if denylist_exists(&self.pool, &dids).await? {
+                                break 'matchers_loop;
+                            }
+
                             let feed_content = storage::model::FeedContent{
                                 feed_id: feed_matcher.feed.clone(),
                                 uri: aturi,
@@ -206,6 +217,18 @@ impl ConsumerTask {
 
         Ok(())
     }
+}
+
+fn did_from_aturi(aturi: &str) -> String {
+    let aturi_len = aturi.len();
+    if aturi_len < 6 {
+        return "".to_string();
+    }
+    let collection_start = aturi[5..]
+        .find("/")
+        .map(|value| value + 5)
+        .unwrap_or(aturi_len);
+    aturi[5..collection_start].to_string()
 }
 
 pub(crate) mod model {

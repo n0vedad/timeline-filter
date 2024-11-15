@@ -1,17 +1,16 @@
 use anyhow::{Context, Result};
 use chrono::{prelude::*, Duration};
-use sqlx::{Pool, Sqlite};
+use sqlx::{Execute, Pool, QueryBuilder, Sqlite};
 
 use model::FeedContent;
 
 pub type StoragePool = Pool<Sqlite>;
 
 pub mod model {
-    use chrono::{DateTime, SubsecRound};
-    use serde::Serialize;
-    use sqlx::prelude::FromRow;
+    use chrono::{DateTime, SubsecRound, Utc};
+    use sqlx::prelude::*;
 
-    #[derive(Clone, FromRow, Serialize)]
+    #[derive(Clone, FromRow)]
     pub struct FeedContent {
         pub feed_id: String,
         pub uri: String,
@@ -30,6 +29,13 @@ pub mod model {
             let diff_seconds = now - target;
             std::cmp::max((diff_seconds / (60 * 60)) + 1, 1)
         }
+    }
+
+    #[derive(Clone, FromRow)]
+    pub struct Denylist {
+        pub subject: String,
+        pub reason: String,
+        pub created_at: DateTime<Utc>,
     }
 }
 
@@ -188,6 +194,83 @@ pub async fn feed_content_truncate_oldest(pool: &StoragePool, age: DateTime<Utc>
         .context("failed to delete feed content beyond mark")?;
 
     tx.commit().await.context("failed to commit transaction")
+}
+
+pub async fn denylist_upsert(pool: &StoragePool, subject: &str, reason: &str) -> Result<()> {
+    let mut tx = pool.begin().await.context("failed to begin transaction")?;
+
+    let now = Utc::now();
+    sqlx::query("INSERT OR REPLACE INTO denylist (subject, reason, updated_at) VALUES (?, ?, ?)")
+        .bind(subject)
+        .bind(reason)
+        .bind(now)
+        .execute(tx.as_mut())
+        .await
+        .context("failed to upsert denylist record")?;
+
+    tx.commit().await.context("failed to commit transaction")
+}
+
+pub async fn denylist_remove(pool: &StoragePool, subject: &str) -> Result<()> {
+    let mut tx = pool.begin().await.context("failed to begin transaction")?;
+
+    sqlx::query("DELETE FROM denylist WHERE subject = ?")
+        .bind(subject)
+        .execute(tx.as_mut())
+        .await
+        .context("failed to delete denylist record")?;
+
+    tx.commit().await.context("failed to commit transaction")
+}
+
+pub async fn feed_content_purge_aturi(
+    pool: &StoragePool,
+    aturi: &str,
+    feed: &Option<String>,
+) -> Result<()> {
+    let mut tx = pool.begin().await.context("failed to begin transaction")?;
+
+    if let Some(feed) = feed {
+        sqlx::query("DELETE FROM feed_content WHERE feed_id = ? AND uri = ?")
+            .bind(feed)
+            .bind(aturi)
+            .execute(tx.as_mut())
+            .await
+            .context("failed to delete denylist record")?;
+    } else {
+        sqlx::query("DELETE FROM feed_content WHERE uri = ?")
+            .bind(aturi)
+            .execute(tx.as_mut())
+            .await
+            .context("failed to delete denylist record")?;
+    }
+
+    tx.commit().await.context("failed to commit transaction")
+}
+
+pub async fn denylist_exists(pool: &StoragePool, subjects: &[&str]) -> Result<bool> {
+    let mut tx = pool.begin().await.context("failed to begin transaction")?;
+
+    let mut query_builder: QueryBuilder<Sqlite> =
+        QueryBuilder::new("SELECT COUNT(*) FROM denylist WHERE subject IN (");
+    let mut separated = query_builder.separated(", ");
+    for subject in subjects {
+        separated.push_bind(subject);
+    }
+    separated.push_unseparated(") ");
+
+    let mut query = sqlx::query_scalar::<_, i64>(query_builder.build().sql());
+    for subject in subjects {
+        query = query.bind(subject);
+    }
+    let count = query
+        .fetch_one(tx.as_mut())
+        .await
+        .context("failed to delete denylist record")?;
+
+    tx.commit().await.context("failed to commit transaction")?;
+
+    Ok(count > 0)
 }
 
 #[cfg(test)]
