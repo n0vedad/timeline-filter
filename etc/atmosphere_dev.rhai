@@ -26,23 +26,38 @@ const BAIL = [
   "art", "illustration",
 ];
 
+// Posts that reference one or more of these DIDs may be talking about something atmosphere related, but the weight isn't very high because sometimes posts are just trying to get attention for a feature request or support case.
 const DIDS = [
-  "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
-  "did:plc:oc6vwdlmk2kqyida5i74d3p5",
-  "did:plc:lehcqqkwzcwvjvw66uthu5oq",
-  "did:plc:z72i7hdynmk6r22z27h6tvur",
-  "did:plc:q6gjnaw2blty4crticxkmujt",
-  "did:plc:oky5czdrnfjpqslsw2a5iclo",
-  "did:plc:ragtjsm2j2vknwkz3zp4oxrd",
-  "did:plc:cbkjy5n7bk3ax2wplmtjofq2",
-  "did:plc:tgudj2fjm77pzkuawquqhsxm",
-  "did:plc:kkoqcj4msmlta4nr47g6pk4r",
+  "did:plc:ewvi7nxzyoun6zhxrhs64oiz", // atproto.com
+  "did:plc:oc6vwdlmk2kqyida5i74d3p5", // support.bsky.team
+  "did:plc:lehcqqkwzcwvjvw66uthu5oq", // atprotocol.dev
+  "did:plc:z72i7hdynmk6r22z27h6tvur", // bsky.app
+  "did:plc:q6gjnaw2blty4crticxkmujt", // jaz.bsky.social
+  "did:plc:oky5czdrnfjpqslsw2a5iclo", // jay.bsky.team
+  "did:plc:ragtjsm2j2vknwkz3zp4oxrd", // pfrazee.com
+  "did:plc:cbkjy5n7bk3ax2wplmtjofq2", // ngerakines.me
+  "did:plc:tgudj2fjm77pzkuawquqhsxm", // smokesignal.events
+  "did:plc:kkoqcj4msmlta4nr47g6pk4r", // aviary.domains
+  "did:plc:klmr76mpewpv7rtm3xgpzd7x", // whtwnd.com
+  "did:plc:klmr76mpewpv7rtm3xgpzd7x", // frontpage.fyi
+  "did:plc:mdjhvva6vlrswsj26cftjttd", // laurenshof.online
+  "did:plc:gttrfs4hfmrclyxvwkwcgpj7", // aparker.io
+  "did:plc:w4xbfzo7kqfes5zb7r6qv3rw", // rudyfraser.com
+  "did:plc:7mnpet2pvof2llhpcwattscf", // stellz.xyz
+  "did:plc:by3jhwdqgbtrcc7q4tkkv3cf", // alice.mosphere.at
+  "did:plc:fpruhuo22xkm5o7ttr2ktxdo", // danabra.mov
+  "did:plc:tpg43qhh4lw4ksiffs4nbda3", // jacob.gold
+  "did:plc:vpkhqolt662uhesyj6nxm7ys", // why.bsky.team
+  "did:plc:2cxgdrgtsmrbqnjkwyplmp43", // bmann.ca
+  "did:plc:cak4klqoj3bqgk5rj6b4f5do", // mmasnick.bsky.social
+  "did:plc:44ybard66vv44zksje25o7dz", // bnewbold.net
 ];
 
 let score = 0.0;
 
 const KEYWORDS = [
   [["atproto"], 2.0],
+  [["appview"], 1.0],
   [["feed", "generator"], 2.0],
   [["pds"], 0.5],
   [["jetstream"], 0.5],
@@ -54,6 +69,8 @@ const KEYWORDS = [
   [["handle"], 0.3],
   [["domain"], 0.3],
   [["mastodon"], 0.3],
+  [["labeler"], 0.3],
+  [["ozone"], 0.3],
   [["bluesky", "infra"], 2.0],
 ];
 const TAGS = [
@@ -61,12 +78,15 @@ const TAGS = [
   ["atprotocol", 2.0],
   ["pds", 0.5],
   ["atmosphere", 0.5],
+  ["ozone", 0.5],
 ];
 
 const URLS = [
   "https://atproto.com/",
   "https://github.com/bluesky-social/",
   "https://docs.bsky.app/",
+  "https://atprotocol.dev/",
+  "https://docs.smokesignal.events/",
 ];
 
 let text = event?.commit?.record?.text ?? "";
@@ -93,14 +113,16 @@ if !embed_external_url.is_empty() {
   }
 }
 
+let has_did = false;
+
 for facet in event?.commit?.record?.facets ?? [] {
   for feature in facet?.features ?? [] {
     switch feature?["$type"] {
       "app.bsky.richtext.facet#mention" => {
         let mention = feature?["did"] ?? "";
-        if !mention.is_empty() {
+        if !has_did && !mention.is_empty() {
           if mention in DIDS {
-              score += 0.5;
+              has_did = true;
           }
         }
       }
@@ -137,6 +159,9 @@ for facet in event?.commit?.record?.facets ?? [] {
   }
 }
 
+if has_did {
+  score += 0.5;
+}
 if score >= 1.0 {
   return build_aturi(event);
 }
