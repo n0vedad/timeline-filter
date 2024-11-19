@@ -129,6 +129,7 @@ pub struct Config {
     pub feeds: Feeds,
     pub compression: Compression,
     pub collections: Collections,
+    pub feed_cache_dir: String,
 }
 
 impl Config {
@@ -184,6 +185,8 @@ impl Config {
         let collections: Collections =
             default_env("COLLECTIONS", "app.bsky.feed.post").try_into()?;
 
+        let feed_cache_dir = optional_env("FEED_CACHE_DIR");
+
         Ok(Self {
             version: version()?,
             http_port,
@@ -204,6 +207,7 @@ impl Config {
             feeds,
             compression,
             collections,
+            feed_cache_dir,
         })
     }
 }

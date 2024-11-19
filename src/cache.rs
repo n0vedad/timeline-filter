@@ -1,6 +1,7 @@
 use anyhow::Result;
 use chrono::Utc;
-use std::{collections::HashMap, sync::Arc};
+use fnv_rs::{Fnv64, FnvHasher};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
@@ -103,6 +104,8 @@ impl CacheTask {
         let sleeper = tokio::time::sleep(interval);
         tokio::pin!(sleeper);
 
+        self.load_cache().await?;
+
         loop {
             tokio::select! {
             () = self.cancellation_token.cancelled() => {
@@ -119,6 +122,36 @@ impl CacheTask {
             }
             }
         }
+        Ok(())
+    }
+
+    async fn load_cache(&self) -> Result<()> {
+        if self.config.feed_cache_dir.is_empty() {
+            return Ok(());
+        }
+
+        for feed in &self.config.feeds.feeds {
+            let hash = Fnv64::hash(feed.uri.as_bytes());
+            let cache_file =
+                PathBuf::from(&self.config.feed_cache_dir).join(format!("{}.json", hash));
+
+            if let Ok(posts) = std::fs::read_to_string(&cache_file) {
+                let posts: Vec<String> = serde_json::from_str(&posts)?;
+                self.cache.update_feed(&feed.uri, &posts).await;
+            }
+        }
+        Ok(())
+    }
+
+    async fn write_cache(&self, feed_id: &str, posts: &Vec<String>) -> Result<()> {
+        if self.config.feed_cache_dir.is_empty() {
+            return Ok(());
+        }
+        let hash = Fnv64::hash(feed_id.as_bytes());
+        let cache_file = PathBuf::from(&self.config.feed_cache_dir).join(format!("{}.json", hash));
+
+        let posts = serde_json::to_string(&posts)?;
+        std::fs::write(&cache_file, posts)?;
         Ok(())
     }
 
@@ -150,6 +183,7 @@ impl CacheTask {
         let posts = feed_content_cached(&self.pool, feed_uri, limit).await?;
         let posts = posts.iter().map(|post| post.uri.clone()).collect();
         self.cache.update_feed(feed_uri, &posts).await;
+        self.write_cache(feed_uri, &posts).await?;
         Ok(())
     }
 
@@ -173,6 +207,7 @@ impl CacheTask {
         let sorted_posts = scored_posts.iter().map(|post| post.1.clone()).collect();
 
         self.cache.update_feed(feed_uri, &sorted_posts).await;
+        self.write_cache(feed_uri, &sorted_posts).await?;
         Ok(())
     }
 }
