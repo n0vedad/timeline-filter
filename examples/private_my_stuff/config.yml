@@ -1,0 +1,28 @@
+feeds:
+- uri: "ATURI"
+  name: "My Stuff"
+  description: "My activity and activity about my activity."
+  matchers:
+  # Matches likes of your posts
+  - path: "$.commit.record.subject.uri"
+    value: "at://DID/app.bsky.feed.post/"
+    type: prefix
+    aturi: "$.commit.record.subject.uri"
+  # Matches posts where you are the author.
+  - path: "$.did"
+    value: "DID"
+  # Matches posts that are replies to your posts.
+  - path: "$.commit.record.reply.parent.uri"
+    value: "at://DID/app.bsky.feed.post/"
+    type: prefix
+  - path: "$.commit.record.reply.root.uri"
+    value: "at://DID/app.bsky.feed.post/"
+    type: prefix
+  # Matches posts that mention you.
+  - path: "$.commit.record.facets[*].features[?(@['$type'] == 'app.bsky.richtext.facet#mention')].did"
+    value: "DID"
+    type: equal
+  # Matches posts that quote you.
+  - path: "$.commit.record.embed.record.uri"
+    value: "at://DID/"
+    type: prefix

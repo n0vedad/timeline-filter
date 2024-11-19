@@ -1,0 +1,18 @@
+feeds:
+- uri: "ATURI"
+  name: "Tags"
+  description: "Tags that I'm watching."
+  matchers:
+  # Matches a tag
+  - path: "$.commit.record.facets[*].features[?(@['$type'] == 'app.bsky.richtext.facet#tag')].tag"
+    value: "nice"
+    type: equal
+  # Matches a tag that starts with a string
+  - path: "$.commit.record.facets[*].features[?(@['$type'] == 'app.bsky.richtext.facet#tag')].tag"
+    value: "bluesk"
+    type: prefix
+  # Matches a tag that has consecutive prefixes
+  # "atprotocoldeveloper", "atprotodev", etc.
+  - path: "$.commit.record.facets[*].features[?(@['$type'] == 'app.bsky.richtext.facet#tag')].tag"
+    values: ["atproto", "dev"]
+    type: sequence

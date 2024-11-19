@@ -14,8 +14,8 @@ Cargo.lock
 *.pdb
 
 # Project specific files
-config.yml
-development.db
+/config.yml
+/development.db
 jetstream_zstd_dictionary
 testdata/local_*
 
