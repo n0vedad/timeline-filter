@@ -1,0 +1,7 @@
+feeds:
+- uri: "ATURI"
+  name: "Popular"
+  description: "Popular posts with the tag #Supercell."
+  matchers:
+  - type: rhai
+    script: "/path/to/popular.rhai"
