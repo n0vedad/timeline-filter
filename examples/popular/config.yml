@@ -2,6 +2,10 @@ feeds:
 - uri: "ATURI"
   name: "Popular"
   description: "Popular posts with the tag #Supercell."
+  query:
+    type: popular
+    gravity: 2.0
+    limit: 300
   matchers:
   - type: rhai
     script: "/path/to/popular.rhai"
