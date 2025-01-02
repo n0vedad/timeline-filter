@@ -1,9 +1,23 @@
+## [0.5.2] - 2025-01-02
+
+### Changed
+
+- Updating atmosphere dev feed
+- Feed caching and restoration
+- Added examples for users, private users, engagement, and tags
+- Added examples for users, private users, engagement, and tags. But for real.
+- Added popular feed example
+- Updating popular feed example
+- Last page would result in error
+- Setting version to 0.5.2
+
 ## [0.5.1] - 2024-11-15
 
 ### Changed
 
 - Denylist support and admin page
 - Setting version to 0.5.1
+- 0.5.1
 
 ## [0.5.0] - 2024-11-15
 
@@ -134,6 +148,7 @@
 - Setting version to 0.1.1
 - 0.1.1
 
+[0.5.2]: https://github.com/astrenoxcoop/supercell/compare/0.5.1..0.5.2
 [0.5.1]: https://github.com/astrenoxcoop/supercell/compare/0.5.0..0.5.1
 [0.5.0]: https://github.com/astrenoxcoop/supercell/compare/0.4.2..0.5.0
 [0.4.2]: https://github.com/astrenoxcoop/supercell/compare/0.4.1..0.4.2
