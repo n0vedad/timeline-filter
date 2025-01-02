@@ -56,7 +56,7 @@ impl Cache {
         let feed_chunks = inner.cached_feeds.get(feed_id)?;
 
         if page > feed_chunks.len() {
-            return None;
+            return Some(vec![]);
         }
 
         feed_chunks.get(page).cloned()
