@@ -53,10 +53,14 @@ async fn main() -> Result<()> {
 
     let feeds: HashMap<String, (Option<String>, HashSet<String>)> = config
         .feeds
-        .feeds
-        .iter()
-        .map(|feed| (feed.uri.clone(), (feed.deny.clone(), feed.allow.clone())))
-        .collect();
+        .as_ref()
+        .map(|f| {
+            f.feeds
+                .iter()
+                .map(|feed| (feed.uri.clone(), (feed.deny.clone(), feed.allow.clone())))
+                .collect()
+        })
+        .unwrap_or_default();
 
     let all_dids = feeds
         .iter()
@@ -109,13 +113,13 @@ async fn main() -> Result<()> {
     {
         let inner_config = config.clone();
         let task_enable = *inner_config.consumer_task_enable.as_ref();
-        if task_enable {
+        if task_enable && inner_config.feeds.is_some() {
             let consumer_task_config = ConsumerTaskConfig {
                 user_agent: inner_config.user_agent.clone(),
                 compression: *inner_config.compression.as_ref(),
                 zstd_dictionary_location: inner_config.zstd_dictionary.clone(),
                 jetstream_hostname: inner_config.jetstream_hostname.clone(),
-                feeds: inner_config.feeds.clone(),
+                feeds: inner_config.feeds.clone().unwrap(),
                 collections: inner_config.collections.as_ref().clone(),
             };
             let task = ConsumerTask::new(pool.clone(), consumer_task_config, token.clone())?;
@@ -126,6 +130,8 @@ async fn main() -> Result<()> {
                 }
                 inner_token.cancel();
             });
+        } else if task_enable {
+            tracing::warn!("Consumer task enabled but no feeds configured (FEEDS env var not set)");
         }
     }
 

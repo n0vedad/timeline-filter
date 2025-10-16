@@ -8,6 +8,8 @@ use chrono::Duration;
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
+use crate::timeline_config::TimelineFeeds;
+
 #[derive(Clone, Deserialize)]
 pub struct Feeds {
     pub feeds: Vec<Feed>,
@@ -126,10 +128,15 @@ pub struct Config {
     pub user_agent: String,
     pub zstd_dictionary: String,
     pub jetstream_hostname: String,
-    pub feeds: Feeds,
+    pub feeds: Option<Feeds>,
     pub compression: Compression,
     pub collections: Collections,
     pub feed_cache_dir: String,
+
+    // Timeline Filter additions
+    pub timeline_feeds: Option<TimelineFeeds>,
+    pub timeline_consumer_enable: TaskEnable,
+    pub poll_interval: TaskInterval,
 }
 
 impl Config {
@@ -174,18 +181,38 @@ impl Config {
         let plc_hostname = default_env("PLC_HOSTNAME", "plc.directory");
 
         let default_user_agent = format!(
-            "supercell ({}; +https://github.com/astrenoxcoop/supercell)",
+            "timeline-filter ({}; +https://github.com/YOUR-USERNAME/timeline-filter)",
             version()?
         );
 
         let user_agent = default_env("USER_AGENT", &default_user_agent);
 
-        let feeds: Feeds = require_env("FEEDS")?.try_into()?;
+        // Feeds config is now optional (for backward compatibility with Supercell)
+        let feeds_path = optional_env("FEEDS");
+        let feeds: Option<Feeds> = if feeds_path.is_empty() {
+            None
+        } else {
+            Some(feeds_path.try_into()?)
+        };
 
         let collections: Collections =
             default_env("COLLECTIONS", "app.bsky.feed.post").try_into()?;
 
         let feed_cache_dir = optional_env("FEED_CACHE_DIR");
+
+        // Timeline Filter configuration
+        let timeline_feeds_path = optional_env("TIMELINE_FEEDS");
+        let timeline_feeds: Option<TimelineFeeds> = if timeline_feeds_path.is_empty() {
+            None
+        } else {
+            Some(timeline_feeds_path.try_into()?)
+        };
+
+        let timeline_consumer_enable: TaskEnable =
+            default_env("TIMELINE_CONSUMER_ENABLE", "true").try_into()?;
+
+        let poll_interval: TaskInterval =
+            default_env("POLL_INTERVAL", "30s").try_into()?;
 
         Ok(Self {
             version: version()?,
@@ -208,6 +235,9 @@ impl Config {
             compression,
             collections,
             feed_cache_dir,
+            timeline_feeds,
+            timeline_consumer_enable,
+            poll_interval,
         })
     }
 }

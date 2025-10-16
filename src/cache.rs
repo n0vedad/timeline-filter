@@ -130,14 +130,16 @@ impl CacheTask {
             return Ok(());
         }
 
-        for feed in &self.config.feeds.feeds {
-            let hash = Fnv64::hash(feed.uri.as_bytes());
-            let cache_file =
-                PathBuf::from(&self.config.feed_cache_dir).join(format!("{}.json", hash));
+        if let Some(feeds) = &self.config.feeds {
+            for feed in &feeds.feeds {
+                let hash = Fnv64::hash(feed.uri.as_bytes());
+                let cache_file =
+                    PathBuf::from(&self.config.feed_cache_dir).join(format!("{}.json", hash));
 
-            if let Ok(posts) = std::fs::read_to_string(&cache_file) {
-                let posts: Vec<String> = serde_json::from_str(&posts)?;
-                self.cache.update_feed(&feed.uri, &posts).await;
+                if let Ok(posts) = std::fs::read_to_string(&cache_file) {
+                    let posts: Vec<String> = serde_json::from_str(&posts)?;
+                    self.cache.update_feed(&feed.uri, &posts).await;
+                }
             }
         }
         Ok(())
@@ -156,21 +158,23 @@ impl CacheTask {
     }
 
     pub async fn main(&self) -> Result<()> {
-        for feed in &self.config.feeds.feeds {
-            let query = feed.query.clone();
+        if let Some(feeds) = &self.config.feeds {
+            for feed in &feeds.feeds {
+                let query = feed.query.clone();
 
-            match query {
-                crate::config::FeedQuery::Simple { limit } => {
-                    if let Err(err) = self.generate_simple(&feed.uri, *limit.as_ref()).await {
-                        tracing::error!(error = ?err, feed_uri = ?feed.uri, "failed to generate simple feed");
+                match query {
+                    crate::config::FeedQuery::Simple { limit } => {
+                        if let Err(err) = self.generate_simple(&feed.uri, *limit.as_ref()).await {
+                            tracing::error!(error = ?err, feed_uri = ?feed.uri, "failed to generate simple feed");
+                        }
                     }
-                }
-                crate::config::FeedQuery::Popular { gravity, limit } => {
-                    if let Err(err) = self
-                        .generate_popular(&feed.uri, gravity, *limit.as_ref())
-                        .await
-                    {
-                        tracing::error!(error = ?err, feed_uri = ?feed.uri, "failed to generate simple feed");
+                    crate::config::FeedQuery::Popular { gravity, limit } => {
+                        if let Err(err) = self
+                            .generate_popular(&feed.uri, gravity, *limit.as_ref())
+                            .await
+                        {
+                            tracing::error!(error = ?err, feed_uri = ?feed.uri, "failed to generate simple feed");
+                        }
                     }
                 }
             }
