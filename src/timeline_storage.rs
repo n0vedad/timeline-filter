@@ -376,6 +376,24 @@ mod tests {
     async fn test_poll_state() {
         let pool = setup_test_pool().await;
 
+        // First create a user (required for foreign key)
+        let feed = TimelineFeed {
+            did: "did:plc:test123".to_string(),
+            feed_uri: "at://did:plc:feedgen/app.bsky.feed.generator/test".to_string(),
+            name: "Test Feed".to_string(),
+            description: "A test feed".to_string(),
+            oauth: OAuthConfig {
+                access_token: "test_token".to_string(),
+                refresh_token: None,
+                expires_at: None,
+                pds_url: "https://bsky.social".to_string(),
+            },
+            filters: FilterConfig::default(),
+            poll_interval: None,
+            max_posts_per_poll: 50,
+        };
+        sync_user_config(&pool, &feed).await.unwrap();
+
         // Should poll when no record exists
         let should = should_poll(&pool, "did:plc:test123", Duration::seconds(30))
             .await

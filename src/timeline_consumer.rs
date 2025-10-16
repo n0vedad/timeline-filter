@@ -267,6 +267,14 @@ impl TimelineConsumerTask {
         posts: &'a [FeedViewPost],
         filters: &FilterConfig,
     ) -> Vec<&'a FeedViewPost> {
+        Self::filter_posts_static(posts, filters)
+    }
+
+    /// Static version of filter_posts for testing
+    fn filter_posts_static<'a>(
+        posts: &'a [FeedViewPost],
+        filters: &FilterConfig,
+    ) -> Vec<&'a FeedViewPost> {
         posts
             .iter()
             .filter(|post| {
@@ -392,26 +400,7 @@ mod tests {
 
     #[test]
     fn test_filter_posts() {
-        use crate::timeline_config::{FilterConfig, TimelineFeeds};
-
-        // Create a simple mock task for testing filter logic
-        let config = TimelineConsumerConfig {
-            timeline_feeds: TimelineFeeds {
-                timeline_feeds: vec![],
-            },
-            default_poll_interval: Duration::seconds(30),
-            user_agent: "test".to_string(),
-        };
-
-        // We don't actually need a real pool for this test since we're only testing filter_posts
-        // Create a mock task (without actually initializing it fully)
-        let http_client = reqwest::Client::new();
-        let task = TimelineConsumerTask {
-            pool: unsafe { std::mem::zeroed() }, // SAFETY: we never use pool in filter_posts
-            config,
-            http_client,
-            cancellation_token: CancellationToken::new(),
-        };
+        use crate::timeline_config::FilterConfig;
 
         let mut filters = FilterConfig::default();
         filters
@@ -490,7 +479,8 @@ mod tests {
             },
         ];
 
-        let filtered = task.filter_posts(&posts, &filters);
+        // Use static filter function (no need for task instance)
+        let filtered = TimelineConsumerTask::filter_posts_static(&posts, &filters);
 
         // Should have 2 posts (regular post + allowed repost)
         assert_eq!(filtered.len(), 2);
