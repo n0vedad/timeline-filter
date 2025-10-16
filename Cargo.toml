@@ -1,6 +1,6 @@
 [package]
-name = "supercell"
-version = "0.5.2"
+name = "timeline-filter"
+version = "0.1.0"
 edition = "2021"
 
 [profile.release]
