@@ -3,20 +3,20 @@ use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::env;
-use supercell::cache::Cache;
-use supercell::cache::CacheTask;
-use supercell::cleanup::CleanTask;
-use supercell::vmc::VerificationMethodCacheTask;
+use timeline_filter::cache::Cache;
+use timeline_filter::cache::CacheTask;
+use timeline_filter::cleanup::CleanTask;
+use timeline_filter::vmc::VerificationMethodCacheTask;
 use tokio::net::TcpListener;
 use tokio::signal;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use tracing_subscriber::prelude::*;
 
-use supercell::consumer::ConsumerTask;
-use supercell::consumer::ConsumerTaskConfig;
-use supercell::http::context::WebContext;
-use supercell::http::server::build_router;
-use supercell::timeline_consumer::{TimelineConsumerTask, TimelineConsumerConfig};
+use timeline_filter::consumer::ConsumerTask;
+use timeline_filter::consumer::ConsumerTaskConfig;
+use timeline_filter::http::context::WebContext;
+use timeline_filter::http::server::build_router;
+use timeline_filter::timeline_consumer::{TimelineConsumerTask, TimelineConsumerConfig};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer().pretty())
         .init();
 
-    let version = supercell::config::version()?;
+    let version = timeline_filter::config::version()?;
 
     env::args().for_each(|arg| {
         if arg == "--version" {
@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
         }
     });
 
-    let config = supercell::config::Config::new()?;
+    let config = timeline_filter::config::Config::new()?;
 
     let mut client_builder = reqwest::Client::builder();
     for ca_certificate in config.certificate_bundles.as_ref() {

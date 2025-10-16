@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
-use supercell::matcher::Matcher;
-use supercell::matcher::RhaiMatcher;
+use timeline_filter::matcher::Matcher;
+use timeline_filter::matcher::RhaiMatcher;
 
 fn main() -> Result<()> {
     let mut rhai_input_path: Option<String> = None;

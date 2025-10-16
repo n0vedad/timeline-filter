@@ -1,8 +1,6 @@
 use std::collections::HashSet;
-use std::fmt;
-use std::str::FromStr;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use chrono::Duration;
 use serde::Deserialize;
 
@@ -81,7 +79,7 @@ impl TimelineFeed {
         // Validate poll_interval if present
         if let Some(interval) = &self.poll_interval {
             duration_str::parse_chrono(interval)
-                .with_context(|| format!("Invalid poll_interval: {}", interval))?;
+                .map_err(|e| anyhow::anyhow!("Invalid poll_interval '{}': {}", interval, e))?;
         }
 
         // Validate max_posts_per_poll

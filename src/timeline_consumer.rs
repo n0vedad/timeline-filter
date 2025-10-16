@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use chrono::{Duration, Utc};
+use chrono::Duration;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use tracing;
@@ -392,12 +392,9 @@ mod tests {
 
     #[test]
     fn test_filter_posts() {
-        use crate::timeline_config::FilterConfig;
-        use std::collections::HashSet;
+        use crate::timeline_config::{FilterConfig, TimelineFeeds};
 
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-            .await
-            .unwrap();
+        // Create a simple mock task for testing filter logic
         let config = TimelineConsumerConfig {
             timeline_feeds: TimelineFeeds {
                 timeline_feeds: vec![],
@@ -405,12 +402,16 @@ mod tests {
             default_poll_interval: Duration::seconds(30),
             user_agent: "test".to_string(),
         };
-        let task = TimelineConsumerTask::new(
-            pool,
+
+        // We don't actually need a real pool for this test since we're only testing filter_posts
+        // Create a mock task (without actually initializing it fully)
+        let http_client = reqwest::Client::new();
+        let task = TimelineConsumerTask {
+            pool: unsafe { std::mem::zeroed() }, // SAFETY: we never use pool in filter_posts
             config,
-            CancellationToken::new(),
-        )
-        .unwrap();
+            http_client,
+            cancellation_token: CancellationToken::new(),
+        };
 
         let mut filters = FilterConfig::default();
         filters

@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
-use sqlx::SqlitePool;
 
 use crate::storage::StoragePool;
 use crate::timeline_config::{FilterConfig, TimelineFeed, TimelineFeeds};
@@ -294,8 +293,8 @@ pub struct PollStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::timeline_config::{FilterConfig, OAuthConfig, TimelineFeed, TimelineFeeds};
-    use std::collections::HashSet;
+    use crate::timeline_config::{FilterConfig, OAuthConfig, TimelineFeed};
+    use sqlx::SqlitePool;
 
     async fn setup_test_pool() -> SqlitePool {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
