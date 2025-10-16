@@ -66,31 +66,299 @@ Each user can configure:
 
 ## How It Works
 
-1. **Authentication**: Users authenticate via OAuth and provide their token
-2. **Polling**: The consumer periodically calls `getTimeline()` for each configured user
-3. **Filtering**: Posts are filtered based on the user's blocked reposter list
-4. **Indexing**: Filtered posts are stored in the database per user
-5. **Serving**: The feed generator serves the filtered timeline via the standard feed API
+1. **Configuration**: Define users and their filter rules in `timeline_feeds.yml`
+2. **Startup**: On startup, the configuration is synchronized to the database
+3. **Polling**: The consumer periodically calls `getTimeline()` for each configured user
+4. **Filtering**: Posts are filtered based on the user's blocked reposter list
+   - When a post has a `reason` field with type `reasonRepost`, the reposter's DID is checked
+   - If the reposter DID is in the user's `blocked_reposters` list, the post is filtered out
+   - Original posts from blocked users still appear (only their reposts are filtered)
+5. **Indexing**: Filtered posts are stored in the database per user's feed URI
+6. **Serving**: The feed generator serves the filtered timeline via the standard AT Protocol feed API
+
+## Prerequisites
+
+- Rust (1.70+)
+- SQLite 3
+- AT Protocol account(s) with OAuth tokens
 
 ## Installation
+
+### 1. Clone and Build
 
 ```bash
 # Clone the repository
 git clone https://github.com/YOUR-USERNAME/timeline-filter
 cd timeline-filter
 
-# Set up environment variables
-cp .env.example .env
-# Edit .env with your configuration
-
-# Set up the database
-sqlx database create
-sqlx migrate run
-
-# Build and run
+# Build the project
 cargo build --release
-./target/release/timeline-filter
 ```
+
+### 2. Set Up Database
+
+```bash
+# The database will be created automatically on first run
+# Migrations are embedded and run automatically via sqlx
+```
+
+### 3. Configure Environment
+
+```bash
+# Copy the example environment file
+cp .env.example .env
+
+# Edit .env with your configuration
+nano .env
+```
+
+**Required settings in `.env`:**
+```bash
+HTTP_PORT=4050
+EXTERNAL_BASE=https://your-feed-generator.com
+DATABASE_URL=sqlite://timeline-filter.db
+TIMELINE_FEEDS=timeline_feeds.yml
+```
+
+### 4. Configure Timeline Feeds
+
+```bash
+# Copy the example timeline feeds configuration
+cp timeline_feeds.example.yml timeline_feeds.yml
+
+# Edit timeline_feeds.yml with your users and filters
+nano timeline_feeds.yml
+```
+
+**Example `timeline_feeds.yml`:**
+```yaml
+timeline_feeds:
+  - did: "did:plc:youruser123"
+    feed_uri: "at://did:plc:feedgen/app.bsky.feed.generator/youruser-filtered"
+    name: "My Filtered Timeline"
+    description: "Following feed without annoying reposts"
+
+    oauth:
+      access_token: "your-oauth-access-token"
+      pds_url: "https://bsky.social"
+
+    filters:
+      blocked_reposters:
+        - "did:plc:annoying-user-1"
+        - "did:plc:spam-account"
+```
+
+### 5. Run
+
+```bash
+# Run the feed generator
+./target/release/timeline-filter
+
+# Or for development with debug logging
+RUST_LOG=timeline_filter=debug ./target/release/timeline-filter
+```
+
+## Getting OAuth Tokens
+
+To use Timeline Filter, you need OAuth access tokens for each user. Here are a few options:
+
+### Option 1: Using an OAuth Flow (Recommended)
+
+Build a simple OAuth application that:
+1. Redirects users to AT Protocol OAuth endpoint
+2. Exchanges authorization code for access token
+3. Saves tokens to `timeline_feeds.yml`
+
+See [AT Protocol OAuth Documentation](https://atproto.com/specs/oauth) for details.
+
+### Option 2: Using App Passwords (Simple but Less Secure)
+
+1. Go to your Bluesky settings → App Passwords
+2. Create a new app password
+3. Use it to authenticate and get a session token:
+
+```bash
+curl -X POST https://bsky.social/xrpc/com.atproto.server.createSession \
+  -H "Content-Type: application/json" \
+  -d '{
+    "identifier": "your-handle.bsky.social",
+    "password": "your-app-password"
+  }'
+```
+
+4. Copy the `accessJwt` from the response
+5. Add it to your `timeline_feeds.yml` as the `access_token`
+
+**Note**: App password tokens expire, so you'll need to refresh them periodically.
+
+## Usage
+
+### Starting the Feed Generator
+
+```bash
+# Start with default settings
+./target/release/timeline-filter
+
+# Or with custom environment
+HTTP_PORT=8080 POLL_INTERVAL=60s ./target/release/timeline-filter
+```
+
+### Monitoring
+
+The feed generator provides detailed logging:
+
+```bash
+# Info level (default)
+RUST_LOG=info ./target/release/timeline-filter
+
+# Debug level (recommended for development)
+RUST_LOG=timeline_filter=debug,info ./target/release/timeline-filter
+
+# Trace level (very verbose)
+RUST_LOG=timeline_filter=trace ./target/release/timeline-filter
+```
+
+**Log output example:**
+```
+INFO  timeline_filter Starting timeline consumer task feed_count=2
+DEBUG Polling timeline user_did="did:plc:user123"
+INFO  Processed timeline posts total=50 filtered=48 blocked=2
+DEBUG Successfully completed poll indexed=48
+```
+
+### Accessing Your Filtered Feed
+
+Once running, your filtered feed is available at:
+
+```
+https://your-feed-generator.com/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:plc:feedgen/app.bsky.feed.generator/youruser-filtered
+```
+
+### Adding to Bluesky
+
+1. Open Bluesky app
+2. Go to Feeds → Add Feed
+3. Enter your feed URI: `at://did:plc:feedgen/app.bsky.feed.generator/youruser-filtered`
+4. The feed will appear in your feed list
+
+## Configuration Reference
+
+### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `HTTP_PORT` | No | `4050` | HTTP server port |
+| `EXTERNAL_BASE` | Yes | - | Public URL of your feed generator |
+| `DATABASE_URL` | No | `sqlite://timeline-filter.db` | SQLite database path |
+| `TIMELINE_FEEDS` | Yes | - | Path to timeline feeds YAML config |
+| `TIMELINE_CONSUMER_ENABLE` | No | `true` | Enable/disable timeline consumer |
+| `POLL_INTERVAL` | No | `30s` | Global default poll interval |
+| `CACHE_TASK_ENABLE` | No | `true` | Enable feed caching |
+| `CACHE_TASK_INTERVAL` | No | `3m` | Cache refresh interval |
+| `CLEANUP_TASK_ENABLE` | No | `true` | Enable cleanup of old posts |
+| `CLEANUP_TASK_INTERVAL` | No | `1h` | Cleanup interval |
+| `CLEANUP_TASK_MAX_AGE` | No | `48h` | Maximum age of posts to keep |
+| `RUST_LOG` | No | `info` | Logging level |
+
+### Timeline Feed Configuration
+
+Each timeline feed in `timeline_feeds.yml` supports:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `did` | Yes | User's DID (must start with `did:`) |
+| `feed_uri` | Yes | Feed URI (must start with `at://`) |
+| `name` | Yes | Display name for the feed |
+| `description` | Yes | Feed description |
+| `oauth.access_token` | Yes | OAuth access token |
+| `oauth.refresh_token` | No | OAuth refresh token |
+| `oauth.expires_at` | No | Token expiration (ISO 8601) |
+| `oauth.pds_url` | Yes | PDS URL (e.g., `https://bsky.social`) |
+| `filters.blocked_reposters` | No | List of DIDs whose reposts to filter |
+| `poll_interval` | No | Custom poll interval (overrides global) |
+| `max_posts_per_poll` | No | Max posts per poll (default: 50, max: 100) |
+
+## Advanced Usage
+
+### Multiple Users
+
+You can configure multiple users in the same `timeline_feeds.yml`:
+
+```yaml
+timeline_feeds:
+  - did: "did:plc:user1"
+    feed_uri: "at://did:plc:feedgen/app.bsky.feed.generator/user1-filtered"
+    # ... user 1 config
+
+  - did: "did:plc:user2"
+    feed_uri: "at://did:plc:feedgen/app.bsky.feed.generator/user2-filtered"
+    # ... user 2 config
+```
+
+Each user gets their own filtered feed with independent filter rules.
+
+### Custom Poll Intervals
+
+You can set different poll intervals for different users:
+
+```yaml
+timeline_feeds:
+  # Power user - poll every 10 seconds
+  - did: "did:plc:poweruser"
+    poll_interval: "10s"
+    max_posts_per_poll: 100
+    # ...
+
+  # Casual user - poll every 5 minutes
+  - did: "did:plc:casualuser"
+    poll_interval: "5m"
+    max_posts_per_poll: 50
+    # ...
+```
+
+### Combining with Jetstream Feeds
+
+Timeline Filter maintains backward compatibility with Supercell's Jetstream feeds:
+
+```bash
+# Enable both timeline and Jetstream consumers
+TIMELINE_FEEDS=timeline_feeds.yml
+CONSUMER_TASK_ENABLE=true
+FEEDS=feeds.yml
+JETSTREAM_HOSTNAME=jetstream2.us-east.bsky.network
+```
+
+This allows you to serve both filtered timeline feeds AND traditional Jetstream-based feeds from the same instance.
+
+## Troubleshooting
+
+### "Timeline consumer enabled but no timeline feeds configured"
+
+**Solution**: Make sure `TIMELINE_FEEDS` environment variable points to a valid YAML file with at least one feed configured.
+
+### "Failed to fetch timeline: 401 Unauthorized"
+
+**Solution**: Your OAuth token is invalid or expired. Get a new token and update `timeline_feeds.yml`.
+
+### "Filtered out 0 posts but expected some"
+
+**Solution**: Check that the DIDs in `blocked_reposters` are correct (they must start with `did:` and match the exact DID of the reposter).
+
+### Posts not appearing in feed
+
+**Possible causes**:
+1. Poll interval too long - decrease `poll_interval`
+2. Token expired - refresh OAuth token
+3. PDS URL incorrect - verify `pds_url` is correct
+4. Check logs with `RUST_LOG=debug` for errors
+
+### High CPU/Memory usage
+
+**Solutions**:
+- Increase `poll_interval` to reduce API calls
+- Decrease `max_posts_per_poll`
+- Enable `CLEANUP_TASK_ENABLE` to remove old posts
+- Reduce number of configured users
 
 ## Attribution
 
