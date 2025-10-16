@@ -16,6 +16,7 @@ use supercell::consumer::ConsumerTask;
 use supercell::consumer::ConsumerTaskConfig;
 use supercell::http::context::WebContext;
 use supercell::http::server::build_router;
+use supercell::timeline_consumer::{TimelineConsumerTask, TimelineConsumerConfig};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -194,6 +195,47 @@ async fn main() -> Result<()> {
                 }
                 inner_token.cancel();
             });
+        }
+    }
+
+    // Timeline Consumer Task
+    {
+        let inner_config = config.clone();
+        let task_enable = *inner_config.timeline_consumer_enable.as_ref();
+
+        if task_enable {
+            if let Some(timeline_feeds) = inner_config.timeline_feeds {
+                if timeline_feeds.is_empty() {
+                    tracing::warn!("Timeline consumer enabled but no timeline feeds configured");
+                } else {
+                    tracing::info!(
+                        feed_count = timeline_feeds.len(),
+                        "Starting timeline consumer task"
+                    );
+
+                    let consumer_config = TimelineConsumerConfig {
+                        timeline_feeds,
+                        default_poll_interval: *inner_config.poll_interval.as_ref(),
+                        user_agent: inner_config.user_agent.clone(),
+                    };
+
+                    let task = TimelineConsumerTask::new(
+                        pool.clone(),
+                        consumer_config,
+                        token.clone(),
+                    )?;
+
+                    let inner_token = token.clone();
+                    tracker.spawn(async move {
+                        if let Err(err) = task.run_background().await {
+                            tracing::warn!(error = ?err, "timeline consumer task error");
+                        }
+                        inner_token.cancel();
+                    });
+                }
+            } else {
+                tracing::warn!("Timeline consumer enabled but TIMELINE_FEEDS env var not set");
+            }
         }
     }
 
