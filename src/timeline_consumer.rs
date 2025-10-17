@@ -181,6 +181,15 @@ impl TimelineConsumerTask {
         // 4. Index filtered posts into feed_content table
         let mut indexed_count = 0;
         for post_view in filtered {
+            // Skip posts without author (deleted/blocked accounts)
+            if post_view.post.author.is_none() {
+                tracing::debug!(
+                    uri = %post_view.post.uri,
+                    "Skipping post without author (deleted/blocked account)"
+                );
+                continue;
+            }
+
             // Skip posts without indexedAt timestamp (deleted/unavailable posts)
             let Some(ref indexed_at_str) = post_view.post.indexed_at else {
                 tracing::debug!(
@@ -383,13 +392,13 @@ pub struct FeedViewPost {
 /// Post view (simplified)
 ///
 /// NOTE: According to the official AT Protocol lexicon (app.bsky.feed.defs#postView),
-/// the fields `cid`, `record`, and `indexedAt` are marked as REQUIRED.
+/// the fields `cid`, `record`, `author`, and `indexedAt` are marked as REQUIRED.
 /// However, in practice, the Bluesky API sometimes returns posts with missing fields
-/// (e.g., deleted posts, unavailable content, suspended accounts).
+/// (e.g., deleted posts, unavailable content, suspended accounts, blocked users).
 ///
 /// We mark these fields as Optional to handle these edge cases gracefully,
 /// rather than failing to parse the entire timeline response.
-/// Posts with missing critical fields (like indexedAt) are skipped during processing.
+/// Posts with missing critical fields (like indexedAt or author) are skipped during processing.
 #[derive(Debug, Deserialize)]
 pub struct PostView {
     /// AT-URI of the post (REQUIRED by spec)
@@ -397,8 +406,9 @@ pub struct PostView {
     /// CID of the post
     /// Per spec: REQUIRED, but we make it Optional for robustness
     pub cid: Option<String>,
-    /// Author of the post (REQUIRED by spec)
-    pub author: ProfileViewBasic,
+    /// Author of the post
+    /// Per spec: REQUIRED, but we make it Optional for deleted/blocked accounts
+    pub author: Option<ProfileViewBasic>,
     /// Post record
     /// Per spec: REQUIRED, but we make it Optional for deleted/unavailable posts
     #[serde(default)]
@@ -493,12 +503,12 @@ mod tests {
                 post: PostView {
                     uri: "at://did:plc:author1/post/1".to_string(),
                     cid: Some("cid1".to_string()),
-                    author: ProfileViewBasic {
+                    author: Some(ProfileViewBasic {
                         did: "did:plc:author1".to_string(),
                         handle: Some("author1.bsky.social".to_string()),
                         display_name: None,
                         avatar: None,
-                    },
+                    }),
                     record: Some(serde_json::json!({"text": "Hello"})),
                     indexed_at: Some("2025-10-17T00:00:00Z".to_string()),
                 },
@@ -510,12 +520,12 @@ mod tests {
                 post: PostView {
                     uri: "at://did:plc:author2/post/2".to_string(),
                     cid: Some("cid2".to_string()),
-                    author: ProfileViewBasic {
+                    author: Some(ProfileViewBasic {
                         did: "did:plc:author2".to_string(),
                         handle: Some("author2.bsky.social".to_string()),
                         display_name: None,
                         avatar: None,
-                    },
+                    }),
                     record: Some(serde_json::json!({"text": "World"})),
                     indexed_at: Some("2025-10-17T00:00:00Z".to_string()),
                 },
@@ -536,12 +546,12 @@ mod tests {
                 post: PostView {
                     uri: "at://did:plc:author3/post/3".to_string(),
                     cid: Some("cid3".to_string()),
-                    author: ProfileViewBasic {
+                    author: Some(ProfileViewBasic {
                         did: "did:plc:author3".to_string(),
                         handle: Some("author3.bsky.social".to_string()),
                         display_name: None,
                         avatar: None,
-                    },
+                    }),
                     record: Some(serde_json::json!({"text": "Test"})),
                     indexed_at: Some("2025-10-17T00:00:00Z".to_string()),
                 },

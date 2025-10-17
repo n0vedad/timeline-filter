@@ -1,12 +1,12 @@
 use super::{
-    context::WebContext, handle_admin::handle_admin,
+    context::WebContext,
     handle_describe_feed_generator::handle_describe_feed_generator,
     handle_get_feed_skeleton::handle_get_feed_skeleton, handle_index::handle_index,
     handle_well_known::handle_well_known,
 };
 use axum::{
     http::HeaderValue,
-    routing::{get, post},
+    routing::get,
     Router,
 };
 use http::{
@@ -30,8 +30,6 @@ pub fn build_router(web_context: WebContext) -> Router {
             "/xrpc/app.bsky.feed.describeFeedGenerator",
             get(handle_describe_feed_generator),
         )
-        .route("/admin", get(handle_admin))
-        .route("/admin", post(handle_admin))
         .layer((
             TraceLayer::new_for_http(),
             TimeoutLayer::new(Duration::from_secs(10)),
