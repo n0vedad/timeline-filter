@@ -1,71 +1,62 @@
 # Timeline Filter Configuration
 # This file configures per-user filtered timeline feeds
+# Later this will be managed via web interface, but for now it's YAML-based
 
 timeline_feeds:
-  # Example user 1: Basic configuration
-  - did: "did:plc:user123abc"
-    feed_uri: "at://did:plc:your-feedgen-did/app.bsky.feed.generator/user123-filtered"
+  # Single test user with all available settings documented
+  - did: "did:plc:your-user-did-here"
+    feed_uri: "at://did:plc:your-feedgen-did/app.bsky.feed.generator/filtered-timeline"
     name: "My Filtered Timeline"
     description: "Following feed without annoying reposts"
 
     # OAuth credentials for accessing the user's timeline
     oauth:
+      # REQUIRED: Access token from Bluesky OAuth or session
       access_token: "your-access-token-here"
-      # Optional: refresh token for automatic token renewal
-      refresh_token: "your-refresh-token-here"
-      # Optional: token expiration (ISO 8601 format)
-      expires_at: "2025-12-31T23:59:59Z"
-      # PDS URL (usually https://bsky.social for most users)
+
+      # OPTIONAL: Refresh token for automatic token renewal
+      # refresh_token: "your-refresh-token-here"
+
+      # OPTIONAL: Token expiration timestamp (ISO 8601 format)
+      # expires_at: "2025-12-31T23:59:59Z"
+
+      # REQUIRED: PDS URL (usually https://bsky.social for most users)
       pds_url: "https://bsky.social"
 
     # Filtering configuration
     filters:
       # List of DIDs whose reposts will be filtered out
-      # Note: Original posts from these users will still appear
+      # Note: Original posts from these users will still appear, only their reposts are blocked
       blocked_reposters:
-        - "did:plc:annoying-reposter-1"
-        - "did:plc:annoying-reposter-2"
+        - "did:plc:example-annoying-reposter"
+        # Add more DIDs as needed
 
-    # Optional: How often to poll this user's timeline (default: 30s)
+    # OPTIONAL: How often to poll this user's timeline
+    # Format: "10s", "30s", "1m", "5m", etc.
+    # Default: 30s (from environment variable POLL_INTERVAL)
     poll_interval: "30s"
 
-    # Optional: Maximum posts to fetch per poll (default: 50, max: 100)
+    # OPTIONAL: Maximum posts to fetch per poll
+    # Range: 1-100, Default: 50
     max_posts_per_poll: 50
 
-  # Example user 2: Minimal configuration
-  - did: "did:plc:anotheruser456"
-    feed_uri: "at://did:plc:your-feedgen-did/app.bsky.feed.generator/user456-filtered"
-    name: "Clean Timeline"
-    description: "Timeline with selective filtering"
+# How to get your DID:
+# - Go to https://bsky.app/settings
+# - Your DID is shown at the bottom (starts with "did:plc:")
 
-    oauth:
-      access_token: "another-access-token"
-      pds_url: "https://bsky.social"
-
-    filters:
-      blocked_reposters:
-        - "did:plc:spam-account"
-
-  # Example user 3: Custom poll interval
-  - did: "did:plc:poweruser789"
-    feed_uri: "at://did:plc:your-feedgen-did/app.bsky.feed.generator/user789-filtered"
-    name: "Power User Feed"
-    description: "High-frequency polling for active users"
-
-    oauth:
-      access_token: "power-user-token"
-      pds_url: "https://bsky.social"
-
-    filters:
-      blocked_reposters: []
-
-    # Poll every 10 seconds for near-realtime updates
-    poll_interval: "10s"
-    max_posts_per_poll: 100
+# How to get an access token:
+# Option 1: App Password (quick but tokens expire)
+#   curl -X POST https://bsky.social/xrpc/com.atproto.server.createSession \
+#     -H "Content-Type: application/json" \
+#     -d '{"identifier": "your-handle.bsky.social", "password": "your-app-password"}'
+#   Copy the "accessJwt" value
+#
+# Option 2: OAuth flow (recommended for production)
+#   Implement proper OAuth 2.0 flow - see AT Protocol docs
 
 # Notes:
-# - Each user needs their own access token obtained via OAuth
+# - Multiple users can be configured by adding more items to the list
+# - Each user needs their own OAuth token
 # - DIDs must start with "did:" (e.g., "did:plc:...")
 # - Feed URIs must start with "at://"
-# - Poll intervals: "10s", "30s", "1m", "5m", etc.
-# - To get your access token, use the OAuth flow or session tokens
+# - This config will eventually be replaced by web-based configuration
