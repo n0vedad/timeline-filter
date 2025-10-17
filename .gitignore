@@ -26,6 +26,7 @@ testdata/local_*
 # release hooks
 .tmp.release_info
 venv/
+__pycache__
 
 # Claude
 .claude
