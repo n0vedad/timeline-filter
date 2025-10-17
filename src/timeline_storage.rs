@@ -432,3 +432,41 @@ pub async fn get_all_feed_uris(pool: &StoragePool) -> Result<Vec<String>> {
 
     Ok(rows.into_iter().map(|(uri,)| uri).collect())
 }
+
+/// Get posts for a timeline feed (for getFeedSkeleton endpoint)
+/// Returns posts ordered by indexed_at DESC with pagination support
+pub async fn get_feed_posts(
+    pool: &StoragePool,
+    feed_uri: &str,
+    limit: u32,
+    cursor: Option<String>,
+) -> Result<Vec<String>> {
+    // Extract user DID from feed URI: at://did:plc:xxx/app.bsky.feed.generator/yyy
+    let user_did = feed_uri
+        .strip_prefix("at://")
+        .and_then(|s| s.split('/').next())
+        .ok_or_else(|| anyhow::anyhow!("Invalid feed URI format"))?;
+
+    // Parse cursor as offset (simple pagination)
+    let offset = cursor
+        .and_then(|c| c.parse::<i64>().ok())
+        .unwrap_or(0);
+
+    let rows = sqlx::query_as::<_, (String,)>(
+        r#"
+        SELECT post_uri
+        FROM timeline_posts
+        WHERE user_did = ?
+        ORDER BY indexed_at DESC
+        LIMIT ? OFFSET ?
+        "#,
+    )
+    .bind(user_did)
+    .bind(limit as i64)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+    .context("Failed to fetch timeline posts")?;
+
+    Ok(rows.into_iter().map(|(uri,)| uri).collect())
+}

@@ -9,10 +9,8 @@ use super::context::WebContext;
 
 /// Handle describeFeedGenerator endpoint
 ///
-/// Returns service DID and list of feeds hosted by this generator.
+/// Returns service DID and list of Timeline feeds hosted by this generator.
 /// Required by AT Protocol for feed generator discovery.
-///
-/// Includes both Jetstream-based feeds and Timeline-based feeds.
 ///
 /// Response format:
 /// ```json
@@ -33,20 +31,13 @@ pub async fn handle_describe_feed_generator(
 
     let service_did = format!("did:web:{}", hostname);
 
-    // Collect Jetstream feeds (from config.yml)
-    let mut all_feeds: Vec<serde_json::Value> = web_context.feeds
-        .keys()
-        .map(|k| json!({"uri": k}))
+    // Get Timeline feeds from database
+    let all_feeds: Vec<serde_json::Value> = timeline_storage::get_all_feed_uris(&web_context.pool)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|uri| json!({"uri": uri}))
         .collect();
-
-    // Add Timeline feeds (from timeline_feeds.yml / database)
-    if let Ok(timeline_feed_uris) = timeline_storage::get_all_feed_uris(&web_context.pool).await {
-        all_feeds.extend(
-            timeline_feed_uris
-                .into_iter()
-                .map(|uri| json!({"uri": uri}))
-        );
-    }
 
     Ok(Json(json!({
         "did": service_did,

@@ -1,19 +1,12 @@
 use anyhow::Result;
 use sqlx::SqlitePool;
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::env;
-use timeline_filter::cache::Cache;
-use timeline_filter::cache::CacheTask;
 use timeline_filter::cleanup::CleanTask;
-use timeline_filter::vmc::VerificationMethodCacheTask;
 use tokio::net::TcpListener;
 use tokio::signal;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use tracing_subscriber::prelude::*;
 
-use timeline_filter::consumer::ConsumerTask;
-use timeline_filter::consumer::ConsumerTaskConfig;
 use timeline_filter::http::context::WebContext;
 use timeline_filter::http::server::build_router;
 use timeline_filter::timeline_consumer::{TimelineConsumerTask, TimelineConsumerConfig};
@@ -47,34 +40,14 @@ async fn main() -> Result<()> {
     }
 
     client_builder = client_builder.user_agent(config.user_agent.clone());
-    let http_client = client_builder.build()?;
+    let _http_client = client_builder.build()?;
 
     let pool = SqlitePool::connect(&config.database_url).await?;
     sqlx::migrate!().run(&pool).await?;
 
-    let feeds: HashMap<String, (Option<String>, HashSet<String>)> = config
-        .feeds
-        .as_ref()
-        .map(|f| {
-            f.feeds
-                .iter()
-                .map(|feed| (feed.uri.clone(), (feed.deny.clone(), feed.allow.clone())))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let all_dids = feeds
-        .iter()
-        .flat_map(|(_, (_, allow))| allow.iter().cloned())
-        .collect::<HashSet<String>>();
-
-    let cache = Cache::new(20);
-
     let web_context = WebContext::new(
         pool.clone(),
         config.external_base.as_str(),
-        feeds,
-        cache.clone(),
     );
 
     let app = build_router(web_context.clone());
@@ -111,76 +84,11 @@ async fn main() -> Result<()> {
         });
     }
 
-    {
-        let inner_config = config.clone();
-        let task_enable = *inner_config.consumer_task_enable.as_ref();
-        if task_enable && inner_config.feeds.is_some() && inner_config.jetstream_hostname.is_some() {
-            let consumer_task_config = ConsumerTaskConfig {
-                user_agent: inner_config.user_agent.clone(),
-                compression: *inner_config.compression.as_ref(),
-                zstd_dictionary_location: inner_config.zstd_dictionary.clone(),
-                jetstream_hostname: inner_config.jetstream_hostname.clone(),
-                feeds: inner_config.feeds.clone().unwrap(),
-                collections: inner_config.collections.as_ref().clone(),
-            };
-            let task = ConsumerTask::new(pool.clone(), consumer_task_config, token.clone())?;
-            let inner_token = token.clone();
-            tracker.spawn(async move {
-                if let Err(err) = task.run_background().await {
-                    tracing::warn!(error = ?err, "consumer task error");
-                }
-                inner_token.cancel();
-            });
-        } else if task_enable && inner_config.feeds.is_some() {
-            tracing::warn!("Consumer task enabled but JETSTREAM_HOSTNAME not configured");
-        } else if task_enable {
-            tracing::warn!("Consumer task enabled but no feeds configured (FEEDS env var not set)");
-        }
-    }
+    // Jetstream consumer removed - Timeline Filter uses TimelineConsumerTask instead
 
-    {
-        let inner_config = config.clone();
-        let task_enable = *inner_config.vmc_task_enable.as_ref();
-        if task_enable {
-            let task = VerificationMethodCacheTask::new(
-                pool.clone(),
-                http_client,
-                inner_config.plc_hostname.clone(),
-                all_dids,
-                token.clone(),
-            );
-            task.main().await?;
-            let inner_token = token.clone();
-            tracker.spawn(async move {
-                if let Err(err) = task.run_background(chrono::Duration::hours(4)).await {
-                    tracing::warn!(error = ?err, "consumer task error");
-                }
-                inner_token.cancel();
-            });
-        }
-    }
+    // VerificationMethodCacheTask removed - not needed for Timeline Filter
 
-    {
-        let inner_config = config.clone();
-        let task_enable = *inner_config.cache_task_enable.as_ref();
-        if task_enable {
-            let task = CacheTask::new(
-                pool.clone(),
-                cache.clone(),
-                inner_config.clone(),
-                token.clone(),
-            );
-            task.main().await?;
-            let inner_token = token.clone();
-            let interval = *inner_config.cache_task_interval.as_ref();
-            tracker.spawn(async move {
-                if let Err(err) = task.run_background(interval).await {
-                    tracing::warn!(error = ?err, "cache task error");
-                }
-                inner_token.cancel();
-            });
-        }
-    }
+    // CacheTask removed - Timeline Filter doesn't use feed caching
 
     {
         let inner_config = config.clone();

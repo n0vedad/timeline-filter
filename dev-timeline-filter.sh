@@ -9,16 +9,10 @@ export EXTERNAL_BASE=localhost:4050
 # Database Configuration
 export DATABASE_URL=sqlite://development.db
 
-# Timeline Filter Configuration (NEW - required for timeline filtering)
+# Timeline Filter Configuration
 export TIMELINE_FEEDS=$(pwd)/timeline_feeds.yml
 export TIMELINE_CONSUMER_ENABLE=true
 export POLL_INTERVAL=30s
-
-# Jetstream Consumer (DISABLED - not needed for timeline filtering)
-export CONSUMER_TASK_ENABLE=false
-# export JETSTREAM_HOSTNAME=jetstream2.us-east.bsky.network
-# export FEEDS=$(pwd)/config.yml
-# export COLLECTIONS=app.bsky.feed.post
 
 # Cache Configuration
 export CACHE_TASK_ENABLE=true

@@ -19,6 +19,7 @@ pub mod model {
     }
 
     impl FeedContent {
+        #[allow(dead_code)]
         pub(crate) fn age_in_hours(&self, now: i64) -> i64 {
             let target = DateTime::from_timestamp_micros(self.indexed_at)
                 .map(|value| value.trunc_subsecs(0).timestamp());
