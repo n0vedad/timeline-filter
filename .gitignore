@@ -15,12 +15,15 @@ Cargo.lock
 
 # Project specific files
 /config.yml
+/timeline_feeds.yml
+/.env
 /development.db
+/development.db-shm
+/development.db-wal
 jetstream_zstd_dictionary
 testdata/local_*
 
 # release hooks
-create-release-*.sh
 .tmp.release_info
 venv/
 
