@@ -6,4 +6,3 @@ pub mod storage;
 pub mod timeline_config;
 pub mod timeline_consumer;
 pub mod timeline_storage;
-pub mod vmc;

@@ -24,17 +24,10 @@ pub struct Config {
     pub external_base: String,
     pub database_url: String,
     pub certificate_bundles: CertificateBundles,
-    pub cache_task_enable: TaskEnable,
-    pub cache_task_interval: TaskInterval,
+    pub user_agent: String,
     pub cleanup_task_enable: TaskEnable,
     pub cleanup_task_interval: TaskInterval,
     pub cleanup_task_max_age: TaskInterval,
-    pub vmc_task_enable: TaskEnable,
-    pub plc_hostname: String,
-    pub user_agent: String,
-    pub feed_cache_dir: String,
-
-    // Timeline Filter configuration
     pub timeline_feeds: Option<TimelineFeeds>,
     pub timeline_consumer_enable: TaskEnable,
     pub poll_interval: TaskInterval,
@@ -50,10 +43,12 @@ impl Config {
         let certificate_bundles: CertificateBundles =
             optional_env("CERTIFICATE_BUNDLES").try_into()?;
 
-        let cache_task_enable: TaskEnable = default_env("CACHE_TASK_ENABLE", "true").try_into()?;
+        let default_user_agent = format!(
+            "timeline-filter ({}; +https://github.com/YOUR-USERNAME/timeline-filter)",
+            version()?
+        );
 
-        let cache_task_interval: TaskInterval =
-            default_env("CACHE_TASK_INTERVAL", "3m").try_into()?;
+        let user_agent = default_env("USER_AGENT", &default_user_agent);
 
         let cleanup_task_enable: TaskEnable =
             default_env("CLEANUP_TASK_ENABLE", "true").try_into()?;
@@ -63,19 +58,6 @@ impl Config {
 
         let cleanup_task_max_age: TaskInterval =
             default_env("CLEANUP_TASK_MAX_AGE", "48h").try_into()?;
-
-        let vmc_task_enable: TaskEnable = default_env("VMC_TASK_ENABLE", "true").try_into()?;
-
-        let plc_hostname = default_env("PLC_HOSTNAME", "plc.directory");
-
-        let default_user_agent = format!(
-            "timeline-filter ({}; +https://github.com/YOUR-USERNAME/timeline-filter)",
-            version()?
-        );
-
-        let user_agent = default_env("USER_AGENT", &default_user_agent);
-
-        let feed_cache_dir = optional_env("FEED_CACHE_DIR");
 
         // Timeline Filter configuration
         let timeline_feeds_path = optional_env("TIMELINE_FEEDS");
@@ -97,15 +79,10 @@ impl Config {
             external_base,
             database_url,
             certificate_bundles,
-            cache_task_enable,
-            cache_task_interval,
+            user_agent,
             cleanup_task_enable,
             cleanup_task_interval,
             cleanup_task_max_age,
-            vmc_task_enable,
-            plc_hostname,
-            user_agent,
-            feed_cache_dir,
             timeline_feeds,
             timeline_consumer_enable,
             poll_interval,
