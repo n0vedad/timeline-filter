@@ -19,6 +19,9 @@ export CLEANUP_TASK_ENABLE=true
 export CLEANUP_TASK_INTERVAL=1h
 export CLEANUP_TASK_MAX_AGE=48h
 
+# User Agent (required for API requests)
+export USER_AGENT="timeline-filter (dev; +https://github.com/YOUR-USERNAME/timeline-filter)"
+
 # Logging
 export RUST_LOG=timeline_filter=debug,info
 export RUST_BACKTRACE=1

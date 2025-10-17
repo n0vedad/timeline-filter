@@ -43,12 +43,7 @@ impl Config {
         let certificate_bundles: CertificateBundles =
             optional_env("CERTIFICATE_BUNDLES").try_into()?;
 
-        let default_user_agent = format!(
-            "timeline-filter ({}; +https://github.com/YOUR-USERNAME/timeline-filter)",
-            version()?
-        );
-
-        let user_agent = default_env("USER_AGENT", &default_user_agent);
+        let user_agent = require_env("USER_AGENT")?;
 
         let cleanup_task_enable: TaskEnable =
             default_env("CLEANUP_TASK_ENABLE", "true").try_into()?;
