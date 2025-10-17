@@ -419,3 +419,16 @@ mod tests {
         assert_eq!(stats.total_posts_indexed, 10);
     }
 }
+
+/// Get all feed URIs from timeline_user_config
+/// Get all feed URIs from timeline_user_config
+pub async fn get_all_feed_uris(pool: &StoragePool) -> Result<Vec<String>> {
+    let rows = sqlx::query_as::<_, (String,)>(
+        "SELECT feed_uri FROM timeline_user_config ORDER BY created_at DESC"
+    )
+    .fetch_all(pool)
+    .await
+    .context("Failed to fetch feed URIs")?;
+
+    Ok(rows.into_iter().map(|(uri,)| uri).collect())
+}

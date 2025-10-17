@@ -127,7 +127,7 @@ pub struct Config {
     pub plc_hostname: String,
     pub user_agent: String,
     pub zstd_dictionary: String,
-    pub jetstream_hostname: String,
+    pub jetstream_hostname: Option<String>,
     pub feeds: Option<Feeds>,
     pub compression: Compression,
     pub collections: Collections,
@@ -149,7 +149,14 @@ impl Config {
         let certificate_bundles: CertificateBundles =
             optional_env("CERTIFICATE_BUNDLES").try_into()?;
 
-        let jetstream_hostname = require_env("JETSTREAM_HOSTNAME")?;
+        let jetstream_hostname = {
+            let hostname = optional_env("JETSTREAM_HOSTNAME");
+            if hostname.is_empty() {
+                None
+            } else {
+                Some(hostname)
+            }
+        };
 
         let compression: Compression = default_env("COMPRESSION", "false").try_into()?;
 

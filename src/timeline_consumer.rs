@@ -1,3 +1,25 @@
+//! Timeline Consumer
+//!
+//! This module implements timeline polling and filtering for AT Protocol feeds.
+//! It polls `app.bsky.feed.getTimeline` for each configured user and applies
+//! repost filters based on user configuration.
+//!
+//! ## Type Definitions vs. AT Protocol Spec
+//!
+//! Our type definitions intentionally deviate from the official AT Protocol lexicon
+//! specs in some cases to handle real-world API behavior:
+//!
+//! - **PostView**: Fields like `cid`, `record`, and `indexedAt` are marked as REQUIRED
+//!   in the lexicon but are made Optional here to handle deleted/unavailable posts
+//! - **ProfileViewBasic**: Field `handle` is marked as REQUIRED in the lexicon but
+//!   is made Optional here to handle suspended/deleted accounts
+//!
+//! This defensive approach allows us to gracefully handle API edge cases rather than
+//! failing to parse entire timeline responses when encountering malformed data.
+//!
+//! Posts with missing critical fields (like `indexedAt`) are logged and skipped during
+//! indexing rather than causing the entire poll cycle to fail.
+
 use anyhow::{Context, Result};
 use chrono::Duration;
 use serde::Deserialize;
@@ -159,10 +181,26 @@ impl TimelineConsumerTask {
         // 4. Index filtered posts into feed_content table
         let mut indexed_count = 0;
         for post_view in filtered {
-            let indexed_at = parse_indexed_at(&post_view.post.indexed_at)
-                .with_context(|| {
-                    format!("Failed to parse indexedAt for {}", post_view.post.uri)
-                })?;
+            // Skip posts without indexedAt timestamp (deleted/unavailable posts)
+            let Some(ref indexed_at_str) = post_view.post.indexed_at else {
+                tracing::debug!(
+                    uri = %post_view.post.uri,
+                    "Skipping post without indexedAt timestamp"
+                );
+                continue;
+            };
+
+            let indexed_at = match parse_indexed_at(indexed_at_str) {
+                Ok(ts) => ts,
+                Err(e) => {
+                    tracing::warn!(
+                        uri = %post_view.post.uri,
+                        error = ?e,
+                        "Failed to parse indexedAt, skipping post"
+                    );
+                    continue;
+                }
+            };
 
             if let Err(e) = feed_content_upsert(
                 &self.pool,
@@ -247,9 +285,27 @@ impl TimelineConsumerTask {
             anyhow::bail!("getTimeline failed: {} - {}", status, body);
         }
 
-        let timeline: TimelineResponse = response
-            .json()
+        // Get body as text first for better error messages
+        let body_text = response
+            .text()
             .await
+            .context("Failed to read response body")?;
+
+        let timeline: TimelineResponse = serde_json::from_str(&body_text)
+            .map_err(|e| {
+                // Log first 1000 chars of response for debugging
+                let preview = if body_text.len() > 1000 {
+                    format!("{}... (truncated, total {} bytes)", &body_text[..1000], body_text.len())
+                } else {
+                    body_text.clone()
+                };
+                tracing::error!(
+                    error = %e,
+                    response_preview = %preview,
+                    "Failed to parse getTimeline response"
+                );
+                e
+            })
             .context("Failed to parse getTimeline response")?;
 
         tracing::trace!(
@@ -325,19 +381,33 @@ pub struct FeedViewPost {
 }
 
 /// Post view (simplified)
+///
+/// NOTE: According to the official AT Protocol lexicon (app.bsky.feed.defs#postView),
+/// the fields `cid`, `record`, and `indexedAt` are marked as REQUIRED.
+/// However, in practice, the Bluesky API sometimes returns posts with missing fields
+/// (e.g., deleted posts, unavailable content, suspended accounts).
+///
+/// We mark these fields as Optional to handle these edge cases gracefully,
+/// rather than failing to parse the entire timeline response.
+/// Posts with missing critical fields (like indexedAt) are skipped during processing.
 #[derive(Debug, Deserialize)]
 pub struct PostView {
-    /// AT-URI of the post
+    /// AT-URI of the post (REQUIRED by spec)
     pub uri: String,
     /// CID of the post
-    pub cid: String,
-    /// Author of the post
+    /// Per spec: REQUIRED, but we make it Optional for robustness
+    pub cid: Option<String>,
+    /// Author of the post (REQUIRED by spec)
     pub author: ProfileViewBasic,
     /// Post record
-    pub record: serde_json::Value,
+    /// Per spec: REQUIRED, but we make it Optional for deleted/unavailable posts
+    #[serde(default)]
+    pub record: Option<serde_json::Value>,
     /// When the post was indexed
+    /// Per spec: REQUIRED (datetime), but we make it Optional for deleted/unavailable posts
+    /// Posts without this field are skipped during indexing
     #[serde(rename = "indexedAt")]
-    pub indexed_at: String,
+    pub indexed_at: Option<String>,
 }
 
 /// Repost reason
@@ -354,16 +424,26 @@ pub struct ReasonRepost {
 }
 
 /// Basic profile view
+///
+/// NOTE: According to the official AT Protocol lexicon (app.bsky.actor.defs#profileViewBasic),
+/// both `did` and `handle` are marked as REQUIRED.
+/// However, in practice, the API sometimes returns profiles with missing `handle`
+/// (e.g., suspended/deleted accounts, accounts in invalid states).
+///
+/// We mark `handle` as Optional to handle these edge cases gracefully.
 #[derive(Debug, Deserialize)]
 pub struct ProfileViewBasic {
-    /// DID of the user
+    /// DID of the user (REQUIRED by spec)
     pub did: String,
     /// Handle of the user
-    pub handle: String,
-    /// Display name (optional)
+    /// Per spec: REQUIRED, but we make it Optional for suspended/deleted accounts
+    pub handle: Option<String>,
+    /// Display name
+    /// Per spec: Optional
     #[serde(rename = "displayName")]
     pub display_name: Option<String>,
-    /// Avatar URL (optional)
+    /// Avatar URL
+    /// Per spec: Optional
     pub avatar: Option<String>,
 }
 
@@ -412,15 +492,15 @@ mod tests {
             FeedViewPost {
                 post: PostView {
                     uri: "at://did:plc:author1/post/1".to_string(),
-                    cid: "cid1".to_string(),
+                    cid: Some("cid1".to_string()),
                     author: ProfileViewBasic {
                         did: "did:plc:author1".to_string(),
-                        handle: "author1.bsky.social".to_string(),
+                        handle: Some("author1.bsky.social".to_string()),
                         display_name: None,
                         avatar: None,
                     },
-                    record: serde_json::json!({"text": "Hello"}),
-                    indexed_at: "2025-10-17T00:00:00Z".to_string(),
+                    record: Some(serde_json::json!({"text": "Hello"})),
+                    indexed_at: Some("2025-10-17T00:00:00Z".to_string()),
                 },
                 reason: None,
                 reply: None,
@@ -429,21 +509,21 @@ mod tests {
             FeedViewPost {
                 post: PostView {
                     uri: "at://did:plc:author2/post/2".to_string(),
-                    cid: "cid2".to_string(),
+                    cid: Some("cid2".to_string()),
                     author: ProfileViewBasic {
                         did: "did:plc:author2".to_string(),
-                        handle: "author2.bsky.social".to_string(),
+                        handle: Some("author2.bsky.social".to_string()),
                         display_name: None,
                         avatar: None,
                     },
-                    record: serde_json::json!({"text": "World"}),
-                    indexed_at: "2025-10-17T00:00:00Z".to_string(),
+                    record: Some(serde_json::json!({"text": "World"})),
+                    indexed_at: Some("2025-10-17T00:00:00Z".to_string()),
                 },
                 reason: Some(ReasonRepost {
                     reason_type: "app.bsky.feed.defs#reasonRepost".to_string(),
                     by: ProfileViewBasic {
                         did: "did:plc:blocked".to_string(),
-                        handle: "blocked.bsky.social".to_string(),
+                        handle: Some("blocked.bsky.social".to_string()),
                         display_name: None,
                         avatar: None,
                     },
@@ -455,21 +535,21 @@ mod tests {
             FeedViewPost {
                 post: PostView {
                     uri: "at://did:plc:author3/post/3".to_string(),
-                    cid: "cid3".to_string(),
+                    cid: Some("cid3".to_string()),
                     author: ProfileViewBasic {
                         did: "did:plc:author3".to_string(),
-                        handle: "author3.bsky.social".to_string(),
+                        handle: Some("author3.bsky.social".to_string()),
                         display_name: None,
                         avatar: None,
                     },
-                    record: serde_json::json!({"text": "Test"}),
-                    indexed_at: "2025-10-17T00:00:00Z".to_string(),
+                    record: Some(serde_json::json!({"text": "Test"})),
+                    indexed_at: Some("2025-10-17T00:00:00Z".to_string()),
                 },
                 reason: Some(ReasonRepost {
                     reason_type: "app.bsky.feed.defs#reasonRepost".to_string(),
                     by: ProfileViewBasic {
                         did: "did:plc:allowed".to_string(),
-                        handle: "allowed.bsky.social".to_string(),
+                        handle: Some("allowed.bsky.social".to_string()),
                         display_name: None,
                         avatar: None,
                     },

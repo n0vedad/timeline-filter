@@ -114,7 +114,7 @@ async fn main() -> Result<()> {
     {
         let inner_config = config.clone();
         let task_enable = *inner_config.consumer_task_enable.as_ref();
-        if task_enable && inner_config.feeds.is_some() {
+        if task_enable && inner_config.feeds.is_some() && inner_config.jetstream_hostname.is_some() {
             let consumer_task_config = ConsumerTaskConfig {
                 user_agent: inner_config.user_agent.clone(),
                 compression: *inner_config.compression.as_ref(),
@@ -131,6 +131,8 @@ async fn main() -> Result<()> {
                 }
                 inner_token.cancel();
             });
+        } else if task_enable && inner_config.feeds.is_some() {
+            tracing::warn!("Consumer task enabled but JETSTREAM_HOSTNAME not configured");
         } else if task_enable {
             tracing::warn!("Consumer task enabled but no feeds configured (FEEDS env var not set)");
         }

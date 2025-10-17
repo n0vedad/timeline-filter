@@ -28,7 +28,7 @@ pub struct ConsumerTaskConfig {
     pub user_agent: String,
     pub compression: bool,
     pub zstd_dictionary_location: String,
-    pub jetstream_hostname: String,
+    pub jetstream_hostname: Option<String>,
     pub feeds: config::Feeds,
     pub collections: Vec<String>,
 }
@@ -59,12 +59,15 @@ impl ConsumerTask {
     pub async fn run_background(&self) -> Result<()> {
         tracing::debug!("ConsumerTask started");
 
+        let jetstream_hostname = self.config.jetstream_hostname.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("JETSTREAM_HOSTNAME not configured"))?;
+
         let last_time_us =
-            consumer_control_get(&self.pool, &self.config.jetstream_hostname).await?;
+            consumer_control_get(&self.pool, jetstream_hostname).await?;
 
         let uri = Uri::from_str(&format!(
             "wss://{}/subscribe?compress={}&requireHello=true",
-            self.config.jetstream_hostname, self.config.compression
+            jetstream_hostname, self.config.compression
         ))
         .context("invalid jetstream URL")?;
 
@@ -116,7 +119,7 @@ impl ConsumerTask {
                     break;
                 },
                 () = &mut sleeper => {
-                        consumer_control_insert(&self.pool, &self.config.jetstream_hostname, time_usec).await?;
+                        consumer_control_insert(&self.pool, jetstream_hostname, time_usec).await?;
                         sleeper.as_mut().reset(Instant::now() + interval);
                 },
                 item = client.next() => {
