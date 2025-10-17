@@ -14,18 +14,10 @@ export TIMELINE_FEEDS=$(pwd)/timeline_feeds.yml
 export TIMELINE_CONSUMER_ENABLE=true
 export POLL_INTERVAL=30s
 
-# Cache Configuration
-export CACHE_TASK_ENABLE=true
-export CACHE_TASK_INTERVAL=3m
-
 # Cleanup Configuration
 export CLEANUP_TASK_ENABLE=true
 export CLEANUP_TASK_INTERVAL=1h
 export CLEANUP_TASK_MAX_AGE=48h
-
-# Verification Method Cache
-export VMC_TASK_ENABLE=true
-export PLC_HOSTNAME=plc.directory
 
 # Logging
 export RUST_LOG=timeline_filter=debug,info
