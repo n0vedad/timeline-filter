@@ -10,7 +10,7 @@ export EXTERNAL_BASE=localhost:4050
 export DATABASE_URL=sqlite://development.db
 
 # Timeline Filter Configuration
-export TIMELINE_FEEDS=$(pwd)/timeline_feeds.yml
+export TIMELINE_FEEDS=$(pwd)/config.yml
 export TIMELINE_CONSUMER_ENABLE=true
 export POLL_INTERVAL=30s
 
@@ -32,12 +32,12 @@ echo "==> Preparing database..."
 touch development.db
 echo "    Database migrations will run automatically on startup"
 
-# Check if timeline_feeds.yml exists
-if [ ! -f "timeline_feeds.yml" ]; then
+# Check if config.yml exists
+if [ ! -f "config.yml" ]; then
     echo ""
-    echo "WARNING: timeline_feeds.yml not found!"
+    echo "WARNING: config.yml not found!"
     echo "Please create it from the example:"
-    echo "  cp timeline_feeds.example.yml timeline_feeds.yml"
+    echo "  cp config.example.yml config.yml"
     echo "Then edit it with your configuration."
     echo ""
     exit 1

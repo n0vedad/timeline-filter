@@ -66,7 +66,7 @@ Each user can configure:
 
 ## How It Works
 
-1. **Configuration**: Define users and their filter rules in `timeline_feeds.yml`
+1. **Configuration**: Define users and their filter rules in `config.yml`
 2. **Startup**: On startup, the configuration is synchronized to the database
 3. **Polling**: The consumer periodically calls `getTimeline()` for each configured user
 4. **Filtering**: Posts are filtered based on the user's blocked reposter list
@@ -117,20 +117,20 @@ nano .env
 HTTP_PORT=4050
 EXTERNAL_BASE=https://your-feed-generator.com
 DATABASE_URL=sqlite://timeline-filter.db
-TIMELINE_FEEDS=timeline_feeds.yml
+TIMELINE_FEEDS=config.yml
 ```
 
 ### 4. Configure Timeline Feeds
 
 ```bash
 # Copy the example timeline feeds configuration
-cp timeline_feeds.example.yml timeline_feeds.yml
+cp config.example.yml config.yml
 
-# Edit timeline_feeds.yml with your users and filters
-nano timeline_feeds.yml
+# Edit config.yml with your users and filters
+nano config.yml
 ```
 
-**Example `timeline_feeds.yml`:**
+**Example `config.yml`:**
 ```yaml
 timeline_feeds:
   - did: "did:plc:youruser123"
@@ -150,11 +150,19 @@ timeline_feeds:
 
 ### 5. Run
 
+**Development Mode:**
 ```bash
-# Run the feed generator
+# Use the development script (automatically sets up environment)
+./dev-server.sh
+```
+
+**Production Mode:**
+```bash
+# Build and run the release binary
+cargo build --release
 ./target/release/timeline-filter
 
-# Or for development with debug logging
+# Or with custom logging
 RUST_LOG=timeline_filter=debug ./target/release/timeline-filter
 ```
 
@@ -167,7 +175,7 @@ To use Timeline Filter, you need OAuth access tokens for each user. Here are a f
 Build a simple OAuth application that:
 1. Redirects users to AT Protocol OAuth endpoint
 2. Exchanges authorization code for access token
-3. Saves tokens to `timeline_feeds.yml`
+3. Saves tokens to `config.yml`
 
 See [AT Protocol OAuth Documentation](https://atproto.com/specs/oauth) for details.
 
@@ -187,7 +195,7 @@ curl -X POST https://bsky.social/xrpc/com.atproto.server.createSession \
 ```
 
 4. Copy the `accessJwt` from the response
-5. Add it to your `timeline_feeds.yml` as the `access_token`
+5. Add it to your `config.yml` as the `access_token`
 
 **Note**: App password tokens expire, so you'll need to refresh them periodically.
 
@@ -195,11 +203,18 @@ curl -X POST https://bsky.social/xrpc/com.atproto.server.createSession \
 
 ### Starting the Feed Generator
 
+**Development:**
 ```bash
-# Start with default settings
+# Use the development script (includes auto-reload on code changes)
+./dev-server.sh
+```
+
+**Production:**
+```bash
+# Start with default settings from .env
 ./target/release/timeline-filter
 
-# Or with custom environment
+# Or with custom environment variables
 HTTP_PORT=8080 POLL_INTERVAL=60s ./target/release/timeline-filter
 ```
 
@@ -262,7 +277,7 @@ https://your-feed-generator.com/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did
 
 ### Timeline Feed Configuration
 
-Each timeline feed in `timeline_feeds.yml` supports:
+Each timeline feed in `config.yml` supports:
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -282,7 +297,7 @@ Each timeline feed in `timeline_feeds.yml` supports:
 
 ### Multiple Users
 
-You can configure multiple users in the same `timeline_feeds.yml`:
+You can configure multiple users in the same `config.yml`:
 
 ```yaml
 timeline_feeds:
@@ -316,20 +331,6 @@ timeline_feeds:
     # ...
 ```
 
-### Combining with Jetstream Feeds
-
-Timeline Filter maintains backward compatibility with Supercell's Jetstream feeds:
-
-```bash
-# Enable both timeline and Jetstream consumers
-TIMELINE_FEEDS=timeline_feeds.yml
-CONSUMER_TASK_ENABLE=true
-FEEDS=feeds.yml
-JETSTREAM_HOSTNAME=jetstream2.us-east.bsky.network
-```
-
-This allows you to serve both filtered timeline feeds AND traditional Jetstream-based feeds from the same instance.
-
 ## Troubleshooting
 
 ### "Timeline consumer enabled but no timeline feeds configured"
@@ -338,7 +339,7 @@ This allows you to serve both filtered timeline feeds AND traditional Jetstream-
 
 ### "Failed to fetch timeline: 401 Unauthorized"
 
-**Solution**: Your OAuth token is invalid or expired. Get a new token and update `timeline_feeds.yml`.
+**Solution**: Your OAuth token is invalid or expired. Get a new token and update `config.yml`.
 
 ### "Filtered out 0 posts but expected some"
 

@@ -44,6 +44,18 @@ timeline_feeds:
     # Recommended: 100 for faster backfill
     max_posts_per_poll: 100
 
+    # OPTIONAL: Maximum number of posts to index during initial backfill
+    # - Default: 500 (recommended for most users, ~2-3 days of history)
+    # - Range: Any positive number (e.g., 1000, 5000)
+    # - Set to null for unlimited backfill (WARNING: may take hours and index thousands of posts!)
+    #
+    # How it works:
+    # - Backfill fetches older posts using cursor pagination
+    # - Stops when this limit is reached OR when cursor becomes undefined (no more posts)
+    # - With 500: Fast startup (~2-5 minutes), reasonable history
+    # - With null: Complete timeline history but much slower startup
+    backfill_limit: 500
+
 # How to get your DID:
 # - Go to https://bsky.app/settings
 # - Your DID is shown at the bottom (starts with "did:plc:")
@@ -64,3 +76,44 @@ timeline_feeds:
 # - DIDs must start with "did:" (e.g., "did:plc:...")
 # - Feed URIs must start with "at://"
 # - This config will eventually be replaced by web-based configuration
+# - Multiple users are polled IN PARALLEL for better performance
+
+# Example: Multiple users with different backfill limits
+#
+# timeline_feeds:
+#   # User 1: Standard setup with 500 post limit
+#   - did: "did:plc:alice"
+#     feed_uri: "at://did:plc:feedgen/app.bsky.feed.generator/alice-filtered"
+#     name: "Alice's Feed"
+#     description: "Filtered timeline"
+#     oauth:
+#       access_token: "alice-token"
+#       pds_url: "https://bsky.social"
+#     backfill_limit: 500
+#     filters:
+#       blocked_reposters:
+#         - "did:plc:annoying-user"
+#
+#   # User 2: Extended history (5000 posts, ~2-3 weeks)
+#   - did: "did:plc:bob"
+#     feed_uri: "at://did:plc:feedgen/app.bsky.feed.generator/bob-extended"
+#     name: "Bob's Extended Feed"
+#     description: "More history"
+#     oauth:
+#       access_token: "bob-token"
+#       pds_url: "https://bsky.social"
+#     backfill_limit: 5000
+#     filters:
+#       blocked_reposters: []
+#
+#   # User 3: Complete timeline history (unlimited)
+#   - did: "did:plc:charlie"
+#     feed_uri: "at://did:plc:feedgen/app.bsky.feed.generator/charlie-complete"
+#     name: "Charlie's Complete Feed"
+#     description: "Full timeline archive"
+#     oauth:
+#       access_token: "charlie-token"
+#       pds_url: "https://bsky.social"
+#     backfill_limit: null  # WARNING: May take hours on first run!
+#     filters:
+#       blocked_reposters: []

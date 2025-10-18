@@ -41,6 +41,5 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter", "chrono", "
 tracing = { version = "0.1.40", features = ["async-await", "log", "valuable"] }
 zstd = "0.13.2"
 reqwest = { version = "0.12.9", features = ["json", "zstd", "rustls-tls"] }
-rhai = { version = "1.20.0", features = ["serde", "std", "sync"]}
 duration-str = "0.11.2"
 fnv_rs = "0.4.3"
