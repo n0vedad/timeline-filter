@@ -387,7 +387,7 @@ For more information about Supercell, visit the [original repository](https://gi
 
 This project is open source under the MIT license.
 
-Copyright (c) 2025 Lucas
+Copyright (c) 2025 n0vedad
 
 Portions derived from Supercell:
 Copyright (c) 2024 The Astrenox Cooperative

@@ -18,6 +18,15 @@ pub struct FeedParams {
 #[derive(Serialize)]
 pub struct FeedItemView {
     pub post: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<SkeletonReasonRepost>,
+}
+
+#[derive(Serialize)]
+pub struct SkeletonReasonRepost {
+    #[serde(rename = "$type")]
+    pub reason_type: String,
+    pub repost: String,
 }
 
 #[derive(Serialize)]
@@ -62,8 +71,12 @@ pub async fn handle_get_feed_skeleton(
 
     let feed_item_views = posts
         .iter()
-        .map(|feed_item| FeedItemView {
-            post: feed_item.clone(),
+        .map(|feed_post| FeedItemView {
+            post: feed_post.uri.clone(),
+            reason: feed_post.repost_uri.as_ref().map(|repost_uri| SkeletonReasonRepost {
+                reason_type: "app.bsky.feed.defs#skeletonReasonRepost".to_string(),
+                repost: repost_uri.clone(),
+            }),
         })
         .collect::<Vec<_>>();
 

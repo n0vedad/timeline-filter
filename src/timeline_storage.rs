@@ -628,21 +628,26 @@ pub async fn get_all_feed_uris(pool: &StoragePool) -> Result<Vec<String>> {
 
 /// Get posts for a timeline feed (for getFeedSkeleton endpoint)
 /// Returns posts ordered by indexed_at DESC with pagination support
+pub struct FeedPost {
+    pub uri: String,
+    pub repost_uri: Option<String>,
+}
+
 pub async fn get_feed_posts(
     pool: &StoragePool,
     feed_uri: &str,
     limit: u32,
     cursor: Option<String>,
-) -> Result<Vec<String>> {
+) -> Result<Vec<FeedPost>> {
     // Parse cursor as offset (simple pagination)
     let offset = cursor
         .and_then(|c| c.parse::<i64>().ok())
         .unwrap_or(0);
 
     // Timeline Filter stores posts in feed_content table with feed_id = feed_uri
-    let rows = sqlx::query_as::<_, (String,)>(
+    let rows = sqlx::query_as::<_, (String, Option<String>)>(
         r#"
-        SELECT uri
+        SELECT uri, repost_uri
         FROM feed_content
         WHERE feed_id = ?
         ORDER BY indexed_at DESC
@@ -656,5 +661,5 @@ pub async fn get_feed_posts(
     .await
     .context("Failed to fetch timeline posts")?;
 
-    Ok(rows.into_iter().map(|(uri,)| uri).collect())
+    Ok(rows.into_iter().map(|(uri, repost_uri)| FeedPost { uri, repost_uri }).collect())
 }

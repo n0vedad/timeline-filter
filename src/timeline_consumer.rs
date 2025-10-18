@@ -253,21 +253,21 @@ impl TimelineConsumerTask {
                 continue;
             }
 
-            // Determine which URI to store, whether it's a repost, and which timestamp to use:
-            // - If it's a repost: use repost URI and repost indexed_at
-            // - Otherwise: use post URI and post indexed_at
-            let (uri_to_store, is_repost, indexed_at_str) = if let Some(reason) = &post_view.reason {
+            // Determine which URIs to store, whether it's a repost, and which timestamp to use:
+            // - If it's a repost: uri=original post, repost_uri=repost URI, use repost indexed_at
+            // - Otherwise: uri=post URI, repost_uri=None, use post indexed_at
+            let (uri, repost_uri, is_repost, indexed_at_str) = if let Some(reason) = &post_view.reason {
                 if reason.reason_type == "app.bsky.feed.defs#reasonRepost" {
-                    if let Some(ref repost_uri) = reason.uri {
+                    if let Some(ref repost_uri_val) = reason.uri {
                         reposts += 1;
                         tracing::trace!(
                             post_uri = %post_view.post.uri,
-                            repost_uri = %repost_uri,
+                            repost_uri = %repost_uri_val,
                             reposter = %reason.by.did,
                             "Indexing repost"
                         );
-                        // Use repost indexed_at for proper chronological ordering
-                        (repost_uri.clone(), true, &reason.indexed_at)
+                        // For reposts: uri=original post, repost_uri=repost record
+                        (post_view.post.uri.clone(), Some(repost_uri_val.clone()), true, &reason.indexed_at)
                     } else {
                         tracing::warn!(
                             post_uri = %post_view.post.uri,
@@ -278,7 +278,7 @@ impl TimelineConsumerTask {
                             tracing::debug!(uri = %post_view.post.uri, "Skipping post without indexedAt");
                             continue;
                         };
-                        (post_view.post.uri.clone(), false, post_indexed_at)
+                        (post_view.post.uri.clone(), None, false, post_indexed_at)
                     }
                 } else {
                     // Not a repost, use post indexed_at
@@ -286,7 +286,7 @@ impl TimelineConsumerTask {
                         tracing::debug!(uri = %post_view.post.uri, "Skipping post without indexedAt");
                         continue;
                     };
-                    (post_view.post.uri.clone(), false, post_indexed_at)
+                    (post_view.post.uri.clone(), None, false, post_indexed_at)
                 }
             } else {
                 // No reason, use post indexed_at
@@ -294,14 +294,14 @@ impl TimelineConsumerTask {
                     tracing::debug!(uri = %post_view.post.uri, "Skipping post without indexedAt");
                     continue;
                 };
-                (post_view.post.uri.clone(), false, post_indexed_at)
+                (post_view.post.uri.clone(), None, false, post_indexed_at)
             };
 
             let indexed_at = match parse_indexed_at(indexed_at_str) {
                 Ok(ts) => ts,
                 Err(e) => {
                     tracing::warn!(
-                        uri = %uri_to_store,
+                        uri = %uri,
                         error = ?e,
                         "Failed to parse indexedAt, skipping post"
                     );
@@ -313,10 +313,11 @@ impl TimelineConsumerTask {
                 &self.pool,
                 &FeedContent {
                     feed_id: feed.feed_uri.clone(),
-                    uri: uri_to_store,
+                    uri,
                     indexed_at,
                     score: 1,
                     is_repost,
+                    repost_uri,
                 },
             )
             .await
