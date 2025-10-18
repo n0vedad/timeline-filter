@@ -36,6 +36,8 @@ The following environment variables are used:
 * `CLEANUP_TASK_ENABLE` - Whether or not to enable the cleanup tasks. Default `true`.
 * `CLEANUP_TASK_INTERVAL` - The interval to run the cleanup tasks. Default `1h`.
 * `CLEANUP_TASK_MAX_AGE` - The maximum age of a post before it is considered stale and deleted from storage. Default `48h`.
+  - **Note**: This is time-based, not count-based! Posts older than this duration are deleted.
+  - Example: `48h` keeps ~500-1000 posts, `7d` keeps ~3500-7000 posts, `30d` keeps ~15000-30000 posts.
 * `PLC_HOSTNAME` - The hostname of the PLC server to use for VMC tasks. Default `plc.directory`.
 * `TIMELINE_FEEDS` - The path to the timeline feeds configuration file.
 * `RUST_LOG` - Logging configuration. Defaults to `timeline_filter=debug,info`
