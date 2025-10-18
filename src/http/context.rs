@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::storage::StoragePool;
+use crate::feed_storage::StoragePool;
 
 pub struct InnerWebContext {
     pub(crate) pool: StoragePool,

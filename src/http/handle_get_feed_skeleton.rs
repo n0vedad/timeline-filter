@@ -4,7 +4,7 @@ use axum_extra::extract::Query;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::SupercellError;
-use crate::timeline_storage;
+use crate::user_storage;
 
 use super::context::WebContext;
 
@@ -47,7 +47,7 @@ pub async fn handle_get_feed_skeleton(
 
     // Get timeline feed posts from database
     let limit = feed_params.limit.unwrap_or(50).min(100) as u32;
-    let posts = timeline_storage::get_feed_posts(
+    let posts = user_storage::get_feed_posts(
         &web_context.pool,
         &feed_uri,
         limit,

@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::Utc;
 use tokio_util::sync::CancellationToken;
 
-use crate::storage::{feed_content_truncate_oldest, StoragePool};
+use crate::feed_storage::{feed_content_truncate_oldest, StoragePool};
 
 pub struct CleanTask {
     pool: StoragePool,

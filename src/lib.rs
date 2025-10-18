@@ -1,8 +1,8 @@
 pub mod cleanup;
-pub mod config;
 pub mod errors;
+pub mod feed_builder;
+pub mod feed_config;
+pub mod feed_storage;
 pub mod http;
-pub mod storage;
-pub mod timeline_config;
-pub mod timeline_consumer;
-pub mod timeline_storage;
+pub mod server_config;
+pub mod user_storage;

@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 
-use crate::storage::StoragePool;
-use crate::timeline_config::{FilterConfig, TimelineFeed, TimelineFeeds};
+use crate::feed_storage::StoragePool;
+use crate::feed_config::{FilterConfig, TimelineFeed, TimelineFeeds};
 
 /// Synchronize timeline feeds configuration from YAML to database
 /// This should be called on startup to ensure DB matches config file
@@ -497,7 +497,7 @@ pub struct PollStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::timeline_config::{FilterConfig, OAuthConfig, TimelineFeed};
+    use crate::feed_config::{FilterConfig, OAuthConfig, TimelineFeed};
     use sqlx::SqlitePool;
 
     async fn setup_test_pool() -> SqlitePool {

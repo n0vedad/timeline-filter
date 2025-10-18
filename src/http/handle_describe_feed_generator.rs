@@ -3,7 +3,7 @@ use axum::{extract::State, response::IntoResponse, Json};
 use serde_json::json;
 
 use crate::errors::SupercellError;
-use crate::timeline_storage;
+use crate::user_storage;
 
 use super::context::WebContext;
 
@@ -32,7 +32,7 @@ pub async fn handle_describe_feed_generator(
     let service_did = format!("did:web:{}", hostname);
 
     // Get Timeline feeds from database
-    let all_feeds: Vec<serde_json::Value> = timeline_storage::get_all_feed_uris(&web_context.pool)
+    let all_feeds: Vec<serde_json::Value> = user_storage::get_all_feed_uris(&web_context.pool)
         .await
         .unwrap_or_default()
         .into_iter()

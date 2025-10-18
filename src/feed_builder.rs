@@ -26,9 +26,9 @@ use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use tracing;
 
-use crate::storage::{feed_content_upsert, model::FeedContent, StoragePool};
-use crate::timeline_config::{FilterConfig, TimelineFeed, TimelineFeeds};
-use crate::timeline_storage;
+use crate::feed_storage::{feed_content_upsert, model::FeedContent, StoragePool};
+use crate::feed_config::{FilterConfig, TimelineFeed, TimelineFeeds};
+use crate::user_storage;
 
 /// Timeline Consumer Task
 /// Polls getTimeline() for each configured user and indexes filtered posts
@@ -58,7 +58,7 @@ impl TimelineConsumerTask {
         let pool_clone = pool.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = timeline_storage::sync_config_to_db(&pool_clone, &feeds_clone).await {
+            if let Err(e) = user_storage::sync_config_to_db(&pool_clone, &feeds_clone).await {
                 tracing::error!(error = ?e, "Failed to sync timeline config to database");
             }
         });
@@ -159,7 +159,7 @@ impl TimelineConsumerTask {
         };
 
         // Check if backfill is still needed
-        let needs_backfill = match timeline_storage::needs_backfill(&task.pool, &feed.did, feed.backfill_limit).await {
+        let needs_backfill = match user_storage::needs_backfill(&task.pool, &feed.did, feed.backfill_limit).await {
             Ok(needs) => needs,
             Err(e) => {
                 tracing::error!(
@@ -173,7 +173,7 @@ impl TimelineConsumerTask {
 
         // TRACK 1: New posts polling (60s interval, always active)
         let new_posts_interval = Duration::seconds(60);
-        match timeline_storage::should_poll(&task.pool, &feed.did, new_posts_interval).await {
+        match user_storage::should_poll(&task.pool, &feed.did, new_posts_interval).await {
             Ok(true) => {
                 // Poll WITHOUT cursor to get newest posts
                 if let Err(e) = task.poll_timeline_mode(&mut feed, false).await {
@@ -206,7 +206,7 @@ impl TimelineConsumerTask {
                 .unwrap_or(Duration::seconds(10));
 
             // Use separate "backfill" tracking in database
-            match timeline_storage::should_poll_backfill(&task.pool, &feed.did, backfill_interval).await
+            match user_storage::should_poll_backfill(&task.pool, &feed.did, backfill_interval).await
             {
                 Ok(true) => {
                     // Poll WITH cursor to get older posts
@@ -250,7 +250,7 @@ impl TimelineConsumerTask {
         // 1. Determine cursor based on mode
         let cursor = if is_backfill {
             // BACKFILL MODE: Use cursor to fetch older posts
-            let cursor = timeline_storage::get_cursor(&self.pool, &feed.did)
+            let cursor = user_storage::get_cursor(&self.pool, &feed.did)
                 .await
                 .context("Failed to get cursor")?;
 
@@ -381,7 +381,7 @@ impl TimelineConsumerTask {
         // 5. Update poll state in database (separate for each mode)
         if is_backfill {
             // BACKFILL MODE: Save cursor and update backfill state
-            timeline_storage::update_poll_state(
+            user_storage::update_poll_state(
                 &self.pool,
                 &feed.did,
                 timeline.cursor.as_deref(),
@@ -391,7 +391,7 @@ impl TimelineConsumerTask {
             .await
             .context("Failed to update backfill poll state")?;
 
-            timeline_storage::update_poll_state_backfill(
+            user_storage::update_poll_state_backfill(
                 &self.pool,
                 &feed.did,
                 new_posts, // Only count NEW posts, not duplicates
@@ -400,7 +400,7 @@ impl TimelineConsumerTask {
             .context("Failed to update backfill tracking")?;
         } else {
             // NEW POSTS MODE: Update new posts state (no cursor saved)
-            timeline_storage::update_poll_state(
+            user_storage::update_poll_state(
                 &self.pool,
                 &feed.did,
                 None, // Never save cursor in new posts mode
@@ -412,9 +412,9 @@ impl TimelineConsumerTask {
         }
 
         // Get feed stats for logging
-        let stats = timeline_storage::get_feed_stats(&self.pool, &feed.feed_uri)
+        let stats = user_storage::get_feed_stats(&self.pool, &feed.feed_uri)
             .await
-            .unwrap_or(timeline_storage::FeedStats {
+            .unwrap_or(user_storage::FeedStats {
                 total_posts: 0,
                 total_reposts: 0,
                 total_blocked: 0,
@@ -626,7 +626,7 @@ impl TimelineConsumerTask {
         feed.oauth.expires_at = Some(expires_at.clone());
 
         // Update database with new tokens
-        timeline_storage::update_tokens(
+        user_storage::update_tokens(
             &self.pool,
             &feed.did,
             &feed.oauth.access_token,
@@ -837,7 +837,7 @@ mod tests {
 
     #[test]
     fn test_filter_posts() {
-        use crate::timeline_config::FilterConfig;
+        use crate::feed_config::FilterConfig;
 
         let mut filters = FilterConfig::default();
         filters

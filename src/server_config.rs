@@ -2,7 +2,7 @@
 use anyhow::{anyhow, Result};
 use chrono::Duration;
 
-use crate::timeline_config::TimelineFeeds;
+use crate::feed_config::TimelineFeeds;
 
 #[derive(Clone)]
 pub struct HttpPort(u16);

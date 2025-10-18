@@ -9,7 +9,7 @@ use tracing_subscriber::prelude::*;
 
 use timeline_filter::http::context::WebContext;
 use timeline_filter::http::server::build_router;
-use timeline_filter::timeline_consumer::{TimelineConsumerTask, TimelineConsumerConfig};
+use timeline_filter::feed_builder::{TimelineConsumerTask, TimelineConsumerConfig};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer().pretty())
         .init();
 
-    let version = timeline_filter::config::version()?;
+    let version = timeline_filter::server_config::version()?;
 
     env::args().for_each(|arg| {
         if arg == "--version" {
@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
         }
     });
 
-    let config = timeline_filter::config::Config::new()?;
+    let config = timeline_filter::server_config::Config::new()?;
 
     let mut client_builder = reqwest::Client::builder();
     for ca_certificate in config.certificate_bundles.as_ref() {
