@@ -44,7 +44,8 @@ def publish(user: str, password: str, name: str, description: str, server: str,
         )
 
         if rkey:
-            # Update existing record - verify it exists first
+            # Check if record exists
+            record_exists = False
             try:
                 client.com.atproto.repo.get_record(
                     models.ComAtprotoRepoGetRecord.Params(
@@ -53,22 +54,34 @@ def publish(user: str, password: str, name: str, description: str, server: str,
                         rkey=rkey,
                     )
                 )
+                record_exists = True
             except Exception:
-                print(f'Error: Feed record "{rkey}" not found. Cannot update non-existent record.', file=sys.stderr)
-                print('Tip: Remove --rkey to create a new feed instead.', file=sys.stderr)
-                sys.exit(1)
+                record_exists = False
 
-            response = client.com.atproto.repo.put_record(
-                models.ComAtprotoRepoPutRecord.Data(
-                    repo=client.me.did,
-                    collection=models.ids.AppBskyFeedGenerator,
-                    rkey=rkey,
-                    record=record,
+            if record_exists:
+                # Update existing record
+                response = client.com.atproto.repo.put_record(
+                    models.ComAtprotoRepoPutRecord.Data(
+                        repo=client.me.did,
+                        collection=models.ids.AppBskyFeedGenerator,
+                        rkey=rkey,
+                        record=record,
+                    )
                 )
-            )
-            print(f'Successfully updated feed record: {rkey}')
+                print(f'Successfully updated feed record: {rkey}')
+            else:
+                # Create new record with specified rkey
+                response = client.com.atproto.repo.create_record(
+                    models.ComAtprotoRepoCreateRecord.Data(
+                        repo=client.me.did,
+                        collection=models.ids.AppBskyFeedGenerator,
+                        rkey=rkey,
+                        record=record,
+                    )
+                )
+                print(f'Successfully created new feed with rkey: {rkey}')
         else:
-            # Create new record
+            # Create new record with auto-generated rkey
             response = client.com.atproto.repo.create_record(
                 models.ComAtprotoRepoCreateRecord.Data(
                     repo=client.me.did,
