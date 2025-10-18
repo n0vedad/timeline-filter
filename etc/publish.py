@@ -199,9 +199,15 @@ Examples:
         sys.exit(2)
 
     # Validate rkey if provided (for update mode)
-    if args.rkey and not args.rkey.isalnum():
-        print(f'Error: Invalid rkey format: "{args.rkey}"', file=sys.stderr)
-        print('Tip: rkey should be alphanumeric (e.g., 3m3fxwkhzu42c)', file=sys.stderr)
-        sys.exit(2)
+    if args.rkey:
+        import re
+        if not re.match(r'^[a-zA-Z0-9_~.:-]{1,512}$', args.rkey):
+            print(f'Error: Invalid rkey format: "{args.rkey}"', file=sys.stderr)
+            print('Tip: rkey can contain: a-z A-Z 0-9 _ ~ . : -', file=sys.stderr)
+            print('Examples: 3m3fxwkhzu42c, filtered-timeline, my:feed', file=sys.stderr)
+            sys.exit(2)
+        if args.rkey in ['.', '..']:
+            print('Error: rkey cannot be "." or ".."', file=sys.stderr)
+            sys.exit(2)
 
     publish(args.user, args.password, args.name, args.description, args.server, args.rkey, args.image)
