@@ -3,7 +3,7 @@ use axum::{extract::State, response::IntoResponse, Json};
 use axum_extra::extract::Query;
 use serde::{Deserialize, Serialize};
 
-use crate::errors::SupercellError;
+use crate::errors::TimelineFilterError;
 use crate::user_storage;
 
 use super::context::WebContext;
@@ -39,7 +39,7 @@ pub struct FeedItemsView {
 pub async fn handle_get_feed_skeleton(
     State(web_context): State<WebContext>,
     Query(feed_params): Query<FeedParams>,
-) -> Result<impl IntoResponse, SupercellError> {
+) -> Result<impl IntoResponse, TimelineFilterError> {
     if feed_params.feed.is_none() {
         return Err(anyhow!("feed parameter is required").into());
     }

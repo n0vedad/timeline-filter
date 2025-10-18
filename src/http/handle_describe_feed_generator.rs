@@ -2,7 +2,7 @@ use anyhow::Result;
 use axum::{extract::State, response::IntoResponse, Json};
 use serde_json::json;
 
-use crate::errors::SupercellError;
+use crate::errors::TimelineFilterError;
 use crate::user_storage;
 
 use super::context::WebContext;
@@ -21,7 +21,7 @@ use super::context::WebContext;
 /// ```
 pub async fn handle_describe_feed_generator(
     State(web_context): State<WebContext>,
-) -> Result<impl IntoResponse, SupercellError> {
+) -> Result<impl IntoResponse, TimelineFilterError> {
     // Construct service DID from external_base
     // Format: did:web:hostname (strip https:// and trailing slashes)
     let hostname = web_context.external_base

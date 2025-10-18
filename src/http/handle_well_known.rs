@@ -2,13 +2,13 @@ use anyhow::Result;
 use axum::{extract::State, response::IntoResponse, Json};
 use serde_json::json;
 
-use crate::errors::SupercellError;
+use crate::errors::TimelineFilterError;
 
 use super::context::WebContext;
 
 pub async fn handle_well_known(
     State(web_context): State<WebContext>,
-) -> Result<impl IntoResponse, SupercellError> {
+) -> Result<impl IntoResponse, TimelineFilterError> {
     // Strip protocol from external_base for DID (did:web doesn't include protocol)
     let hostname = web_context.external_base
         .trim_start_matches("https://")

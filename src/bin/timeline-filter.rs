@@ -15,7 +15,7 @@ use timeline_filter::feed_builder::{TimelineConsumerTask, TimelineConsumerConfig
 async fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "supercell=debug,info".into()),
+            std::env::var("RUST_LOG").unwrap_or_else(|_| "timeline_filter=debug,info".into()),
         ))
         .with(tracing_subscriber::fmt::layer().pretty())
         .init();

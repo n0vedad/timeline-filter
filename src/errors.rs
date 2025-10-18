@@ -4,9 +4,9 @@ use axum::{
 };
 
 #[derive(Debug)]
-pub struct SupercellError(pub anyhow::Error);
+pub struct TimelineFilterError(pub anyhow::Error);
 
-impl<E> From<E> for SupercellError
+impl<E> From<E> for TimelineFilterError
 where
     E: Into<anyhow::Error>,
 {
@@ -15,7 +15,7 @@ where
     }
 }
 
-impl IntoResponse for SupercellError {
+impl IntoResponse for TimelineFilterError {
     fn into_response(self) -> Response {
         {
             tracing::error!(error = ?self.0, "internal server error");
