@@ -312,7 +312,7 @@ impl TimelineConsumerTask {
                 &self.pool,
                 &feed.did,
                 timeline.cursor.as_deref(),
-                total_processed,
+                new_posts, // Only count NEW posts, not duplicates
             )
             .await
             .context("Failed to update backfill poll state")?;
@@ -320,7 +320,7 @@ impl TimelineConsumerTask {
             timeline_storage::update_poll_state_backfill(
                 &self.pool,
                 &feed.did,
-                total_processed,
+                new_posts, // Only count NEW posts, not duplicates
             )
             .await
             .context("Failed to update backfill tracking")?;
@@ -330,7 +330,7 @@ impl TimelineConsumerTask {
                 &self.pool,
                 &feed.did,
                 None, // Never save cursor in new posts mode
-                total_processed,
+                new_posts, // Only count NEW posts, not duplicates
             )
             .await
             .context("Failed to update new posts poll state")?;
