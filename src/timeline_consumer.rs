@@ -103,12 +103,15 @@ impl TimelineConsumerTask {
     }
 
     /// Execute one polling cycle for all users
+    /// Uses dual-track polling like Bluesky's Following feed:
+    /// - Track 1: New posts (60s interval, no cursor) - always runs
+    /// - Track 2: Backfill (10s interval, with cursor) - runs until 500 posts indexed
     async fn poll_cycle(&mut self) {
         // Clone feed list to avoid borrow checker issues
         let mut feeds = self.config.timeline_feeds.timeline_feeds.clone();
 
         for feed in &mut feeds {
-            // Determine interval based on mode (like Bluesky's Following feed)
+            // Check if backfill is still needed
             let needs_backfill = match timeline_storage::needs_backfill(&self.pool, &feed.did).await {
                 Ok(needs) => needs,
                 Err(e) => {
@@ -121,40 +124,64 @@ impl TimelineConsumerTask {
                 }
             };
 
-            let interval = if needs_backfill {
-                // BACKFILL MODE: Use configured interval (or 10s default for fast backfill)
-                feed.poll_interval_duration()
-                    .unwrap_or(Duration::seconds(10))
-            } else {
-                // NEW POSTS MODE: 60 seconds like Bluesky's Following feed
-                Duration::seconds(60)
-            };
-
-            // Check if enough time has passed since last poll
-            match timeline_storage::should_poll(&self.pool, &feed.did, interval).await {
+            // TRACK 1: New posts polling (60s interval, always active)
+            let new_posts_interval = Duration::seconds(60);
+            match timeline_storage::should_poll(&self.pool, &feed.did, new_posts_interval).await {
                 Ok(true) => {
-                    if let Err(e) = self.poll_user_timeline(feed).await {
+                    // Poll WITHOUT cursor to get newest posts
+                    if let Err(e) = self.poll_timeline_mode(feed, false).await {
                         tracing::error!(
                             user_did = %feed.did,
                             error = ?e,
-                            "Failed to poll timeline"
+                            "Failed to poll new posts"
                         );
                     }
                 }
                 Ok(false) => {
-                    // Not time to poll yet
                     tracing::trace!(
                         user_did = %feed.did,
-                        backfill_mode = needs_backfill,
-                        "Skipping poll - not enough time elapsed"
+                        "Skipping new posts poll - not enough time elapsed"
                     );
                 }
                 Err(e) => {
                     tracing::error!(
                         user_did = %feed.did,
                         error = ?e,
-                        "Failed to check poll status"
+                        "Failed to check new posts poll status"
                     );
+                }
+            }
+
+            // TRACK 2: Backfill polling (10s interval, runs only if needed)
+            if needs_backfill {
+                let backfill_interval = feed.poll_interval_duration()
+                    .unwrap_or(Duration::seconds(10));
+
+                // Use separate "backfill" tracking in database
+                match timeline_storage::should_poll_backfill(&self.pool, &feed.did, backfill_interval).await {
+                    Ok(true) => {
+                        // Poll WITH cursor to get older posts
+                        if let Err(e) = self.poll_timeline_mode(feed, true).await {
+                            tracing::error!(
+                                user_did = %feed.did,
+                                error = ?e,
+                                "Failed to poll backfill"
+                            );
+                        }
+                    }
+                    Ok(false) => {
+                        tracing::trace!(
+                            user_did = %feed.did,
+                            "Skipping backfill poll - not enough time elapsed"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            user_did = %feed.did,
+                            error = ?e,
+                            "Failed to check backfill poll status"
+                        );
+                    }
                 }
             }
         }
@@ -166,24 +193,20 @@ impl TimelineConsumerTask {
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
     }
 
-    /// Poll timeline for a single user
-    async fn poll_user_timeline(&mut self, feed: &mut TimelineFeed) -> Result<()> {
+    /// Poll timeline in specific mode (backfill=true uses cursor, backfill=false gets newest)
+    async fn poll_timeline_mode(&mut self, feed: &mut TimelineFeed, is_backfill: bool) -> Result<()> {
         tracing::debug!(
             user_did = %feed.did,
             feed_uri = %feed.feed_uri,
+            mode = if is_backfill { "backfill" } else { "new_posts" },
             "Polling timeline"
         );
 
         // 0. Check if token needs refresh and refresh if necessary
         self.ensure_valid_token(feed).await?;
 
-        // 1. Check if we need to do initial backfill
-        let needs_backfill = timeline_storage::needs_backfill(&self.pool, &feed.did)
-            .await
-            .context("Failed to check backfill status")?;
-
-        // 2. Determine polling mode (like Bluesky's Following feed)
-        let cursor = if needs_backfill {
+        // 1. Determine cursor based on mode
+        let cursor = if is_backfill {
             // BACKFILL MODE: Use cursor to fetch older posts
             let cursor = timeline_storage::get_cursor(&self.pool, &feed.did)
                 .await
@@ -224,7 +247,8 @@ impl TimelineConsumerTask {
         );
 
         // 4. Index filtered posts into feed_content table
-        let mut indexed_count = 0;
+        let mut new_posts = 0;
+        let mut updated_posts = 0;
         for post_view in filtered {
             // Skip posts without author (deleted/blocked accounts)
             if post_view.post.author.is_none() {
@@ -256,7 +280,7 @@ impl TimelineConsumerTask {
                 }
             };
 
-            if let Err(e) = feed_content_upsert(
+            match feed_content_upsert(
                 &self.pool,
                 &FeedContent {
                     feed_id: feed.feed_uri.clone(),
@@ -267,41 +291,58 @@ impl TimelineConsumerTask {
             )
             .await
             {
-                tracing::error!(
-                    uri = %post_view.post.uri,
-                    error = ?e,
-                    "Failed to index post"
-                );
-            } else {
-                indexed_count += 1;
+                Ok(true) => new_posts += 1,      // New post inserted
+                Ok(false) => updated_posts += 1, // Duplicate post updated
+                Err(e) => {
+                    tracing::error!(
+                        uri = %post_view.post.uri,
+                        error = ?e,
+                        "Failed to index post"
+                    );
+                }
             }
         }
 
-        // 5. Update cursor and poll state in database
-        // IMPORTANT: Only save cursor in backfill mode
-        // In "new posts" mode (no cursor), we don't save the returned cursor
-        // This ensures we always fetch newest posts on the next poll
-        let cursor_to_save = if needs_backfill {
-            timeline.cursor.as_deref()
+        let total_processed = new_posts + updated_posts;
+
+        // 5. Update poll state in database (separate for each mode)
+        if is_backfill {
+            // BACKFILL MODE: Save cursor and update backfill state
+            timeline_storage::update_poll_state(
+                &self.pool,
+                &feed.did,
+                timeline.cursor.as_deref(),
+                total_processed,
+            )
+            .await
+            .context("Failed to update backfill poll state")?;
+
+            timeline_storage::update_poll_state_backfill(
+                &self.pool,
+                &feed.did,
+                total_processed,
+            )
+            .await
+            .context("Failed to update backfill tracking")?;
         } else {
-            None
-        };
+            // NEW POSTS MODE: Update new posts state (no cursor saved)
+            timeline_storage::update_poll_state(
+                &self.pool,
+                &feed.did,
+                None, // Never save cursor in new posts mode
+                total_processed,
+            )
+            .await
+            .context("Failed to update new posts poll state")?;
+        }
 
-        timeline_storage::update_poll_state(
-            &self.pool,
-            &feed.did,
-            cursor_to_save,
-            indexed_count,
-        )
-        .await
-        .context("Failed to update poll state")?;
-
-        tracing::debug!(
+        tracing::info!(
             user_did = %feed.did,
-            indexed = indexed_count,
-            backfill_mode = needs_backfill,
-            saved_cursor = ?cursor_to_save,
-            "Successfully completed poll"
+            mode = if is_backfill { "backfill" } else { "new_posts" },
+            new = new_posts,
+            duplicates = updated_posts,
+            total = total_processed,
+            "Completed poll"
         );
 
         Ok(())

@@ -178,10 +178,31 @@ pub async fn get_user_filters(pool: &StoragePool, user_did: &str) -> Result<User
     Ok(UserFilters { blocked_reposters })
 }
 
-/// Check if enough time has passed to poll this user's timeline
+/// Check if enough time has passed to poll this user's timeline (for new posts)
 pub async fn should_poll(pool: &StoragePool, user_did: &str, interval: Duration) -> Result<bool> {
     let result = sqlx::query_scalar::<_, Option<String>>(
         "SELECT last_poll_at FROM timeline_poll_cursor WHERE user_did = ?",
+    )
+    .bind(user_did)
+    .fetch_optional(pool)
+    .await?;
+
+    match result {
+        Some(Some(last_poll_str)) => {
+            let last_poll = chrono::DateTime::parse_from_rfc3339(&last_poll_str)
+                .context("Failed to parse last_poll_at")?;
+            let now = Utc::now();
+            let elapsed = now.signed_duration_since(last_poll.with_timezone(&Utc));
+            Ok(elapsed >= interval)
+        }
+        _ => Ok(true), // Never polled or no record, should poll now
+    }
+}
+
+/// Check if enough time has passed to poll backfill for this user
+pub async fn should_poll_backfill(pool: &StoragePool, user_did: &str, interval: Duration) -> Result<bool> {
+    let result = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT last_poll_at FROM timeline_poll_backfill WHERE user_did = ?",
     )
     .bind(user_did)
     .fetch_optional(pool)
@@ -288,6 +309,60 @@ pub async fn update_poll_state(
         )
         .bind(user_did)
         .bind(cursor)
+        .bind(&now)
+        .bind(posts_indexed)
+        .bind(posts_indexed)
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
+/// Update backfill poll state after successfully polling
+pub async fn update_poll_state_backfill(
+    pool: &StoragePool,
+    user_did: &str,
+    posts_indexed: i32,
+) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+
+    // Check if record exists
+    let exists = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM timeline_poll_backfill WHERE user_did = ?",
+    )
+    .bind(user_did)
+    .fetch_one(pool)
+    .await?
+        > 0;
+
+    if exists {
+        // Update existing record
+        sqlx::query(
+            r#"
+            UPDATE timeline_poll_backfill
+            SET last_poll_at = ?,
+                posts_indexed = ?,
+                total_posts_indexed = total_posts_indexed + ?
+            WHERE user_did = ?
+            "#,
+        )
+        .bind(&now)
+        .bind(posts_indexed)
+        .bind(posts_indexed)
+        .bind(user_did)
+        .execute(pool)
+        .await?;
+    } else {
+        // Insert new record
+        sqlx::query(
+            r#"
+            INSERT INTO timeline_poll_backfill (
+                user_did, last_poll_at, posts_indexed, total_posts_indexed
+            ) VALUES (?, ?, ?, ?)
+            "#,
+        )
+        .bind(user_did)
         .bind(&now)
         .bind(posts_indexed)
         .bind(posts_indexed)

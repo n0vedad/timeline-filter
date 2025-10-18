@@ -26,31 +26,36 @@ pub mod model {
     }
 }
 
-pub async fn feed_content_upsert(pool: &StoragePool, feed_content: &FeedContent) -> Result<()> {
-    let mut tx = pool.begin().await.context("failed to begin transaction")?;
+/// Insert or skip feed content
+/// Returns true if a new post was inserted, false if it was a duplicate (skipped)
+pub async fn feed_content_upsert(pool: &StoragePool, feed_content: &FeedContent) -> Result<bool> {
+    // Check if post already exists
+    let exists = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM feed_content WHERE feed_id = ? AND uri = ?"
+    )
+    .bind(&feed_content.feed_id)
+    .bind(&feed_content.uri)
+    .fetch_one(pool)
+    .await
+    .context("failed to check if post exists")?;
 
-    let now = Utc::now();
-    let res = sqlx::query("INSERT OR REPLACE INTO feed_content (feed_id, uri, indexed_at, updated_at, score) VALUES (?, ?, ?, ?, ?)")
-        .bind(&feed_content.feed_id)
-        .bind(&feed_content.uri)
-        .bind(feed_content.indexed_at)
-        .bind(now)
-        .bind(feed_content.score)
-        .execute(tx.as_mut())
-        .await.context("failed to insert feed content record")?;
-
-    if res.rows_affected() == 0 {
-        sqlx::query("UPDATE feed_content SET score = score + ?, updated_at = ? WHERE feed_id = ? AND uri = ?")
-            .bind(feed_content.score)
-            .bind(now)
+    if exists > 0 {
+        // Post already exists - skip it (no UPDATE needed)
+        Ok(false) // Duplicate
+    } else {
+        // Insert new post
+        let now = Utc::now();
+        sqlx::query("INSERT INTO feed_content (feed_id, uri, indexed_at, updated_at, score) VALUES (?, ?, ?, ?, ?)")
             .bind(&feed_content.feed_id)
             .bind(&feed_content.uri)
-            .execute(tx.as_mut())
+            .bind(feed_content.indexed_at)
+            .bind(now)
+            .bind(feed_content.score)
+            .execute(pool)
             .await
-            .context("failed to update feed content record")?;
+            .context("failed to insert feed content record")?;
+        Ok(true) // New post
     }
-
-    tx.commit().await.context("failed to commit transaction")
 }
 
 pub async fn feed_content_update(pool: &StoragePool, feed_content: &FeedContent) -> Result<()> {
