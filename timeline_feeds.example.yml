@@ -20,7 +20,9 @@ timeline_feeds:
       # OPTIONAL: Token expiration timestamp (ISO 8601 format)
       # expires_at: "2025-12-31T23:59:59Z"
 
-      # REQUIRED: PDS URL (usually https://bsky.social for most users)
+      # REQUIRED: Initial PDS URL for token refresh
+      # For Bluesky users: Use https://bsky.social (will auto-update to real PDS endpoint)
+      # For self-hosted PDS: Use your PDS URL
       pds_url: "https://bsky.social"
 
     # Filtering configuration
@@ -31,14 +33,16 @@ timeline_feeds:
         - "did:plc:example-annoying-reposter"
         # Add more DIDs as needed
 
-    # OPTIONAL: How often to poll this user's timeline
+    # OPTIONAL: How often to poll for BACKFILL (older posts with cursor)
     # Format: "10s", "30s", "1m", "5m", etc.
-    # Default: 30s (from environment variable POLL_INTERVAL)
+    # Default: 10s
+    # Note: New posts are always polled every 60s (hardcoded, independent of this setting)
     poll_interval: "30s"
 
     # OPTIONAL: Maximum posts to fetch per poll
     # Range: 1-100, Default: 50
-    max_posts_per_poll: 50
+    # Recommended: 100 for faster backfill
+    max_posts_per_poll: 100
 
 # How to get your DID:
 # - Go to https://bsky.app/settings

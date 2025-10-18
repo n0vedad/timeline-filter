@@ -249,6 +249,7 @@ impl TimelineConsumerTask {
         // 4. Index filtered posts into feed_content table
         let mut new_posts = 0;
         let mut updated_posts = 0;
+        let mut reposts = 0;
         for post_view in filtered {
             // Skip posts without author (deleted/blocked accounts)
             if post_view.post.author.is_none() {
@@ -280,11 +281,39 @@ impl TimelineConsumerTask {
                 }
             };
 
+            // Determine which URI to store:
+            // - If it's a repost (has reason with URI), store the repost URI
+            // - Otherwise, store the original post URI
+            let uri_to_store = if let Some(reason) = &post_view.reason {
+                if reason.reason_type == "app.bsky.feed.defs#reasonRepost" {
+                    if let Some(ref repost_uri) = reason.uri {
+                        reposts += 1;
+                        tracing::trace!(
+                            post_uri = %post_view.post.uri,
+                            repost_uri = %repost_uri,
+                            reposter = %reason.by.did,
+                            "Indexing repost"
+                        );
+                        repost_uri.clone()
+                    } else {
+                        tracing::warn!(
+                            post_uri = %post_view.post.uri,
+                            "Repost reason missing URI, falling back to post URI"
+                        );
+                        post_view.post.uri.clone()
+                    }
+                } else {
+                    post_view.post.uri.clone()
+                }
+            } else {
+                post_view.post.uri.clone()
+            };
+
             match feed_content_upsert(
                 &self.pool,
                 &FeedContent {
                     feed_id: feed.feed_uri.clone(),
-                    uri: post_view.post.uri.clone(),
+                    uri: uri_to_store,
                     indexed_at,
                     score: 1,
                 },
@@ -292,7 +321,7 @@ impl TimelineConsumerTask {
             .await
             {
                 Ok(true) => new_posts += 1,      // New post inserted
-                Ok(false) => updated_posts += 1, // Duplicate post updated
+                Ok(false) => updated_posts += 1, // Duplicate post skipped
                 Err(e) => {
                     tracing::error!(
                         uri = %post_view.post.uri,
@@ -346,6 +375,7 @@ impl TimelineConsumerTask {
             mode = if is_backfill { "backfill" } else { "new_posts" },
             new = new_posts,
             duplicates = updated_posts,
+            reposts = reposts,
             total = total_processed,
             cumulative = cumulative_total,
             "Completed poll"
@@ -687,6 +717,10 @@ pub struct ReasonRepost {
     pub reason_type: String,
     /// Who reposted
     pub by: ProfileViewBasic,
+    /// URI of the repost record
+    pub uri: Option<String>,
+    /// CID of the repost record
+    pub cid: Option<String>,
     /// When it was reposted
     #[serde(rename = "indexedAt")]
     pub indexed_at: String,
