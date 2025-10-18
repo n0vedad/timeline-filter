@@ -261,6 +261,18 @@ pub async fn get_cursor(pool: &StoragePool, user_did: &str) -> Result<Option<Str
     Ok(result.flatten())
 }
 
+/// Get the total number of posts indexed for a user
+pub async fn get_total_posts_indexed(pool: &StoragePool, user_did: &str) -> Result<i64> {
+    let result = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT total_posts_indexed FROM timeline_poll_cursor WHERE user_did = ?",
+    )
+    .bind(user_did)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(result.flatten().unwrap_or(0))
+}
+
 /// Update poll state after successfully polling a user's timeline
 pub async fn update_poll_state(
     pool: &StoragePool,

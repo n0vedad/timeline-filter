@@ -336,12 +336,18 @@ impl TimelineConsumerTask {
             .context("Failed to update new posts poll state")?;
         }
 
+        // Get cumulative total for logging
+        let cumulative_total = timeline_storage::get_total_posts_indexed(&self.pool, &feed.did)
+            .await
+            .unwrap_or(0);
+
         tracing::info!(
             user_did = %feed.did,
             mode = if is_backfill { "backfill" } else { "new_posts" },
             new = new_posts,
             duplicates = updated_posts,
             total = total_processed,
+            cumulative = cumulative_total,
             "Completed poll"
         );
 
