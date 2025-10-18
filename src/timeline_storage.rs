@@ -441,27 +441,22 @@ pub async fn get_feed_posts(
     limit: u32,
     cursor: Option<String>,
 ) -> Result<Vec<String>> {
-    // Extract user DID from feed URI: at://did:plc:xxx/app.bsky.feed.generator/yyy
-    let user_did = feed_uri
-        .strip_prefix("at://")
-        .and_then(|s| s.split('/').next())
-        .ok_or_else(|| anyhow::anyhow!("Invalid feed URI format"))?;
-
     // Parse cursor as offset (simple pagination)
     let offset = cursor
         .and_then(|c| c.parse::<i64>().ok())
         .unwrap_or(0);
 
+    // Timeline Filter stores posts in feed_content table with feed_id = feed_uri
     let rows = sqlx::query_as::<_, (String,)>(
         r#"
-        SELECT post_uri
-        FROM timeline_posts
-        WHERE user_did = ?
+        SELECT uri
+        FROM feed_content
+        WHERE feed_id = ?
         ORDER BY indexed_at DESC
         LIMIT ? OFFSET ?
         "#,
     )
-    .bind(user_did)
+    .bind(feed_uri)
     .bind(limit as i64)
     .bind(offset)
     .fetch_all(pool)
