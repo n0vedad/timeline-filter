@@ -253,31 +253,10 @@ impl TimelineConsumerTask {
                 continue;
             }
 
-            // Skip posts without indexedAt timestamp (deleted/unavailable posts)
-            let Some(ref indexed_at_str) = post_view.post.indexed_at else {
-                tracing::debug!(
-                    uri = %post_view.post.uri,
-                    "Skipping post without indexedAt timestamp"
-                );
-                continue;
-            };
-
-            let indexed_at = match parse_indexed_at(indexed_at_str) {
-                Ok(ts) => ts,
-                Err(e) => {
-                    tracing::warn!(
-                        uri = %post_view.post.uri,
-                        error = ?e,
-                        "Failed to parse indexedAt, skipping post"
-                    );
-                    continue;
-                }
-            };
-
-            // Determine which URI to store and whether it's a repost:
-            // - If it's a repost (has reason with URI), store the repost URI
-            // - Otherwise, store the original post URI
-            let (uri_to_store, is_repost) = if let Some(reason) = &post_view.reason {
+            // Determine which URI to store, whether it's a repost, and which timestamp to use:
+            // - If it's a repost: use repost URI and repost indexed_at
+            // - Otherwise: use post URI and post indexed_at
+            let (uri_to_store, is_repost, indexed_at_str) = if let Some(reason) = &post_view.reason {
                 if reason.reason_type == "app.bsky.feed.defs#reasonRepost" {
                     if let Some(ref repost_uri) = reason.uri {
                         reposts += 1;
@@ -287,19 +266,47 @@ impl TimelineConsumerTask {
                             reposter = %reason.by.did,
                             "Indexing repost"
                         );
-                        (repost_uri.clone(), true)
+                        // Use repost indexed_at for proper chronological ordering
+                        (repost_uri.clone(), true, &reason.indexed_at)
                     } else {
                         tracing::warn!(
                             post_uri = %post_view.post.uri,
                             "Repost reason missing URI, falling back to post URI"
                         );
-                        (post_view.post.uri.clone(), false)
+                        // Fallback to post indexed_at
+                        let Some(ref post_indexed_at) = post_view.post.indexed_at else {
+                            tracing::debug!(uri = %post_view.post.uri, "Skipping post without indexedAt");
+                            continue;
+                        };
+                        (post_view.post.uri.clone(), false, post_indexed_at)
                     }
                 } else {
-                    (post_view.post.uri.clone(), false)
+                    // Not a repost, use post indexed_at
+                    let Some(ref post_indexed_at) = post_view.post.indexed_at else {
+                        tracing::debug!(uri = %post_view.post.uri, "Skipping post without indexedAt");
+                        continue;
+                    };
+                    (post_view.post.uri.clone(), false, post_indexed_at)
                 }
             } else {
-                (post_view.post.uri.clone(), false)
+                // No reason, use post indexed_at
+                let Some(ref post_indexed_at) = post_view.post.indexed_at else {
+                    tracing::debug!(uri = %post_view.post.uri, "Skipping post without indexedAt");
+                    continue;
+                };
+                (post_view.post.uri.clone(), false, post_indexed_at)
+            };
+
+            let indexed_at = match parse_indexed_at(indexed_at_str) {
+                Ok(ts) => ts,
+                Err(e) => {
+                    tracing::warn!(
+                        uri = %uri_to_store,
+                        error = ?e,
+                        "Failed to parse indexedAt, skipping post"
+                    );
+                    continue;
+                }
             };
 
             match feed_content_upsert(
