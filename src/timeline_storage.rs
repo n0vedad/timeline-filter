@@ -223,7 +223,11 @@ pub async fn should_poll_backfill(pool: &StoragePool, user_did: &str, interval: 
 /// Check if we need to do initial backfill for a user
 /// Returns true if we should use cursor to fetch older posts (backfill mode)
 /// Returns false if we should fetch newest posts without cursor (new posts mode)
-pub async fn needs_backfill(pool: &StoragePool, user_did: &str) -> Result<bool> {
+pub async fn needs_backfill(
+    pool: &StoragePool,
+    user_did: &str,
+    backfill_limit: Option<u32>,
+) -> Result<bool> {
     // Check if cursor exists and if we have enough posts indexed
     let result = sqlx::query_as::<_, (Option<String>, i64)>(
         r#"
@@ -241,10 +245,17 @@ pub async fn needs_backfill(pool: &StoragePool, user_did: &str) -> Result<bool> 
         None => Ok(true),
         // Record exists
         Some((cursor, total_indexed)) => {
-            // If we have a cursor and haven't indexed many posts yet, continue backfill
-            // Once we've indexed 500+ posts, switch to "new posts" mode
-            // This is similar to Bluesky's Following feed behavior
-            Ok(cursor.is_some() && total_indexed < 500)
+            // Check if we have a cursor (more posts available)
+            let has_cursor = cursor.is_some();
+
+            // Check if we've reached the limit
+            let reached_limit = match backfill_limit {
+                Some(limit) => total_indexed >= limit as i64,
+                None => false, // No limit = never reached
+            };
+
+            // Continue backfill if we have a cursor AND haven't reached the limit
+            Ok(has_cursor && !reached_limit)
         }
     }
 }
@@ -513,6 +524,7 @@ mod tests {
             filters: FilterConfig::default(),
             poll_interval: Some("30s".to_string()),
             max_posts_per_poll: 50,
+            backfill_limit: Some(500),
         };
 
         sync_user_config(&pool, &feed).await.unwrap();
@@ -543,6 +555,7 @@ mod tests {
             filters: FilterConfig::default(),
             poll_interval: None,
             max_posts_per_poll: 50,
+            backfill_limit: Some(500),
         };
 
         sync_user_config(&pool, &feed).await.unwrap();
@@ -584,6 +597,7 @@ mod tests {
             filters: FilterConfig::default(),
             poll_interval: None,
             max_posts_per_poll: 50,
+            backfill_limit: Some(500),
         };
         sync_user_config(&pool, &feed).await.unwrap();
 

@@ -42,6 +42,12 @@ pub struct TimelineFeed {
     /// Maximum number of posts to fetch per poll
     #[serde(default = "default_max_posts")]
     pub max_posts_per_poll: u32,
+
+    /// Maximum number of posts to index during backfill
+    /// - Some(500): Stop backfill after 500 posts indexed (default, recommended)
+    /// - None: Continue backfill until cursor becomes undefined (can be thousands of posts!)
+    #[serde(default = "default_backfill_limit")]
+    pub backfill_limit: Option<u32>,
 }
 
 impl TimelineFeed {
@@ -89,6 +95,22 @@ impl TimelineFeed {
         if self.max_posts_per_poll > 100 {
             anyhow::bail!("max_posts_per_poll cannot exceed 100");
         }
+
+        // Validate backfill_limit and warn if unlimited
+        if let Some(limit) = self.backfill_limit {
+            if limit == 0 {
+                anyhow::bail!("backfill_limit must be greater than 0 or null for unlimited");
+            }
+        } else {
+            tracing::warn!(
+                user_did = %self.did,
+                "Unlimited backfill enabled! This may index thousands of posts and take hours. \
+                 Consider setting backfill_limit to a reasonable value (e.g., 500-5000)."
+            );
+        }
+
+        // Validate filters
+        self.filters.validate()?;
 
         Ok(())
     }
@@ -184,6 +206,11 @@ fn default_max_posts() -> u32 {
     50
 }
 
+/// Default value for backfill_limit
+fn default_backfill_limit() -> Option<u32> {
+    Some(500)
+}
+
 /// Load TimelineFeeds from a file path
 impl TryFrom<String> for TimelineFeeds {
     type Error = anyhow::Error;
@@ -259,6 +286,7 @@ mod tests {
             filters: FilterConfig::default(),
             poll_interval: Some("30s".to_string()),
             max_posts_per_poll: 50,
+            backfill_limit: Some(500),
         };
 
         assert!(feed.validate().is_ok());
@@ -280,6 +308,7 @@ mod tests {
             filters: FilterConfig::default(),
             poll_interval: None,
             max_posts_per_poll: 50,
+            backfill_limit: Some(500),
         };
 
         assert!(feed.validate().is_err());
@@ -300,6 +329,7 @@ mod tests {
             },
             filters: FilterConfig::default(),
             poll_interval: Some("30s".to_string()),
+            backfill_limit: Some(500),
             max_posts_per_poll: 50,
         };
 

@@ -102,95 +102,137 @@ impl TimelineConsumerTask {
         Ok(())
     }
 
-    /// Execute one polling cycle for all users
+    /// Execute one polling cycle for all users IN PARALLEL
     /// Uses dual-track polling like Bluesky's Following feed:
     /// - Track 1: New posts (60s interval, no cursor) - always runs
-    /// - Track 2: Backfill (10s interval, with cursor) - runs until 500 posts indexed
+    /// - Track 2: Backfill (10s interval, with cursor) - runs until backfill_limit reached
     async fn poll_cycle(&mut self) {
-        // Clone feed list to avoid borrow checker issues
-        let mut feeds = self.config.timeline_feeds.timeline_feeds.clone();
+        let feeds = self.config.timeline_feeds.timeline_feeds.clone();
 
-        for feed in &mut feeds {
-            // Check if backfill is still needed
-            let needs_backfill = match timeline_storage::needs_backfill(&self.pool, &feed.did).await {
-                Ok(needs) => needs,
-                Err(e) => {
+        // Poll all users in parallel using tokio::spawn
+        let mut tasks = Vec::new();
+
+        for feed in feeds {
+            let pool = self.pool.clone();
+            let http_client = self.http_client.clone();
+            let user_agent = self.config.user_agent.clone();
+
+            let task = tokio::spawn(async move {
+                Self::poll_single_user(pool, feed, http_client, user_agent).await
+            });
+
+            tasks.push(task);
+        }
+
+        // Wait for all tasks to complete
+        for (idx, task) in tasks.into_iter().enumerate() {
+            if let Err(e) = task.await {
+                tracing::error!(
+                    feed_index = idx,
+                    error = ?e,
+                    "Failed to poll user (task panicked)"
+                );
+            }
+        }
+    }
+
+    /// Poll a single user's timeline (both new posts and backfill)
+    async fn poll_single_user(
+        pool: StoragePool,
+        mut feed: TimelineFeed,
+        http_client: reqwest::Client,
+        user_agent: String,
+    ) {
+        // Create a temporary task instance for this user
+        // Note: We pass a dummy cancellation token since we don't need it here
+        let mut task = TimelineConsumerTask {
+            pool,
+            config: TimelineConsumerConfig {
+                timeline_feeds: TimelineFeeds {
+                    timeline_feeds: vec![feed.clone()],
+                },
+                default_poll_interval: Duration::seconds(10),
+                user_agent,
+            },
+            http_client,
+            cancellation_token: tokio_util::sync::CancellationToken::new(),
+        };
+
+        // Check if backfill is still needed
+        let needs_backfill = match timeline_storage::needs_backfill(&task.pool, &feed.did, feed.backfill_limit).await {
+            Ok(needs) => needs,
+            Err(e) => {
+                tracing::error!(
+                    user_did = %feed.did,
+                    error = ?e,
+                    "Failed to check backfill status"
+                );
+                return;
+            }
+        };
+
+        // TRACK 1: New posts polling (60s interval, always active)
+        let new_posts_interval = Duration::seconds(60);
+        match timeline_storage::should_poll(&task.pool, &feed.did, new_posts_interval).await {
+            Ok(true) => {
+                // Poll WITHOUT cursor to get newest posts
+                if let Err(e) = task.poll_timeline_mode(&mut feed, false).await {
                     tracing::error!(
                         user_did = %feed.did,
                         error = ?e,
-                        "Failed to check backfill status"
+                        "Failed to poll new posts"
                     );
-                    continue;
                 }
-            };
+            }
+            Ok(false) => {
+                tracing::trace!(
+                    user_did = %feed.did,
+                    "Skipping new posts poll - not enough time elapsed"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    user_did = %feed.did,
+                    error = ?e,
+                    "Failed to check new posts poll status"
+                );
+            }
+        }
 
-            // TRACK 1: New posts polling (60s interval, always active)
-            let new_posts_interval = Duration::seconds(60);
-            match timeline_storage::should_poll(&self.pool, &feed.did, new_posts_interval).await {
+        // TRACK 2: Backfill polling (10s interval, runs only if needed)
+        if needs_backfill {
+            let backfill_interval = feed
+                .poll_interval_duration()
+                .unwrap_or(Duration::seconds(10));
+
+            // Use separate "backfill" tracking in database
+            match timeline_storage::should_poll_backfill(&task.pool, &feed.did, backfill_interval).await
+            {
                 Ok(true) => {
-                    // Poll WITHOUT cursor to get newest posts
-                    if let Err(e) = self.poll_timeline_mode(feed, false).await {
+                    // Poll WITH cursor to get older posts
+                    if let Err(e) = task.poll_timeline_mode(&mut feed, true).await {
                         tracing::error!(
                             user_did = %feed.did,
                             error = ?e,
-                            "Failed to poll new posts"
+                            "Failed to poll backfill"
                         );
                     }
                 }
                 Ok(false) => {
                     tracing::trace!(
                         user_did = %feed.did,
-                        "Skipping new posts poll - not enough time elapsed"
+                        "Skipping backfill poll - not enough time elapsed"
                     );
                 }
                 Err(e) => {
                     tracing::error!(
                         user_did = %feed.did,
                         error = ?e,
-                        "Failed to check new posts poll status"
+                        "Failed to check backfill poll status"
                     );
                 }
             }
-
-            // TRACK 2: Backfill polling (10s interval, runs only if needed)
-            if needs_backfill {
-                let backfill_interval = feed.poll_interval_duration()
-                    .unwrap_or(Duration::seconds(10));
-
-                // Use separate "backfill" tracking in database
-                match timeline_storage::should_poll_backfill(&self.pool, &feed.did, backfill_interval).await {
-                    Ok(true) => {
-                        // Poll WITH cursor to get older posts
-                        if let Err(e) = self.poll_timeline_mode(feed, true).await {
-                            tracing::error!(
-                                user_did = %feed.did,
-                                error = ?e,
-                                "Failed to poll backfill"
-                            );
-                        }
-                    }
-                    Ok(false) => {
-                        tracing::trace!(
-                            user_did = %feed.did,
-                            "Skipping backfill poll - not enough time elapsed"
-                        );
-                    }
-                    Err(e) => {
-                        tracing::error!(
-                            user_did = %feed.did,
-                            error = ?e,
-                            "Failed to check backfill poll status"
-                        );
-                    }
-                }
-            }
         }
-
-        // Update feeds back (in case tokens were refreshed)
-        self.config.timeline_feeds.timeline_feeds = feeds;
-
-        // Sleep briefly before next cycle to avoid tight loop
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
     }
 
     /// Poll timeline in specific mode (backfill=true uses cursor, backfill=false gets newest)
