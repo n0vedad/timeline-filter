@@ -161,10 +161,16 @@ Examples:
             print('Tip: Get rkey from Feed URI: at://did:plc:.../app.bsky.feed.generator/RKEY', file=sys.stderr)
             sys.exit(2)
 
-        # Validate rkey format (alphanumeric, typically 13 chars)
-        if not args.rkey.isalnum():
+        # Validate rkey format: [a-zA-Z0-9_~.:-]{1,512}
+        # AT Protocol allows: alphanumeric, underscore, tilde, period, colon, hyphen
+        import re
+        if not re.match(r'^[a-zA-Z0-9_~.:-]{1,512}$', args.rkey):
             print(f'Error: Invalid rkey format: "{args.rkey}"', file=sys.stderr)
-            print('Tip: rkey should be alphanumeric (e.g., 3m3fxwkhzu42c)', file=sys.stderr)
+            print('Tip: rkey can contain: a-z A-Z 0-9 _ ~ . : -', file=sys.stderr)
+            print('Examples: 3m3fxwkhzu42c, filtered-timeline, my:feed', file=sys.stderr)
+            sys.exit(2)
+        if args.rkey in ['.', '..']:
+            print('Error: rkey cannot be "." or ".."', file=sys.stderr)
             sys.exit(2)
 
         delete(args.user, args.password, args.rkey)
