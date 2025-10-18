@@ -199,6 +199,35 @@ pub async fn should_poll(pool: &StoragePool, user_did: &str, interval: Duration)
     }
 }
 
+/// Check if we need to do initial backfill for a user
+/// Returns true if we should use cursor to fetch older posts (backfill mode)
+/// Returns false if we should fetch newest posts without cursor (new posts mode)
+pub async fn needs_backfill(pool: &StoragePool, user_did: &str) -> Result<bool> {
+    // Check if cursor exists and if we have enough posts indexed
+    let result = sqlx::query_as::<_, (Option<String>, i64)>(
+        r#"
+        SELECT last_cursor, total_posts_indexed
+        FROM timeline_poll_cursor
+        WHERE user_did = ?
+        "#,
+    )
+    .bind(user_did)
+    .fetch_optional(pool)
+    .await?;
+
+    match result {
+        // No record yet - need initial backfill
+        None => Ok(true),
+        // Record exists
+        Some((cursor, total_indexed)) => {
+            // If we have a cursor and haven't indexed many posts yet, continue backfill
+            // Once we've indexed 500+ posts, switch to "new posts" mode
+            // This is similar to Bluesky's Following feed behavior
+            Ok(cursor.is_some() && total_indexed < 500)
+        }
+    }
+}
+
 /// Get the last cursor for a user's timeline
 pub async fn get_cursor(pool: &StoragePool, user_did: &str) -> Result<Option<String>> {
     let result = sqlx::query_scalar::<_, Option<String>>(

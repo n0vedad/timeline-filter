@@ -108,8 +108,27 @@ impl TimelineConsumerTask {
         let mut feeds = self.config.timeline_feeds.timeline_feeds.clone();
 
         for feed in &mut feeds {
-            let interval = feed.poll_interval_duration()
-                .unwrap_or(self.config.default_poll_interval);
+            // Determine interval based on mode (like Bluesky's Following feed)
+            let needs_backfill = match timeline_storage::needs_backfill(&self.pool, &feed.did).await {
+                Ok(needs) => needs,
+                Err(e) => {
+                    tracing::error!(
+                        user_did = %feed.did,
+                        error = ?e,
+                        "Failed to check backfill status"
+                    );
+                    continue;
+                }
+            };
+
+            let interval = if needs_backfill {
+                // BACKFILL MODE: Use configured interval (or 10s default for fast backfill)
+                feed.poll_interval_duration()
+                    .unwrap_or(Duration::seconds(10))
+            } else {
+                // NEW POSTS MODE: 60 seconds like Bluesky's Following feed
+                Duration::seconds(60)
+            };
 
             // Check if enough time has passed since last poll
             match timeline_storage::should_poll(&self.pool, &feed.did, interval).await {
@@ -126,6 +145,7 @@ impl TimelineConsumerTask {
                     // Not time to poll yet
                     tracing::trace!(
                         user_did = %feed.did,
+                        backfill_mode = needs_backfill,
                         "Skipping poll - not enough time elapsed"
                     );
                 }
@@ -157,20 +177,36 @@ impl TimelineConsumerTask {
         // 0. Check if token needs refresh and refresh if necessary
         self.ensure_valid_token(feed).await?;
 
-        // 1. Get last cursor from database
-        let cursor = timeline_storage::get_cursor(&self.pool, &feed.did)
+        // 1. Check if we need to do initial backfill
+        let needs_backfill = timeline_storage::needs_backfill(&self.pool, &feed.did)
             .await
-            .context("Failed to get cursor")?;
+            .context("Failed to check backfill status")?;
 
-        if let Some(ref cursor) = cursor {
-            tracing::trace!(
+        // 2. Determine polling mode (like Bluesky's Following feed)
+        let cursor = if needs_backfill {
+            // BACKFILL MODE: Use cursor to fetch older posts
+            let cursor = timeline_storage::get_cursor(&self.pool, &feed.did)
+                .await
+                .context("Failed to get cursor")?;
+
+            if let Some(ref cursor) = cursor {
+                tracing::debug!(
+                    user_did = %feed.did,
+                    cursor = %cursor,
+                    "Backfill mode: fetching older posts with cursor"
+                );
+            }
+            cursor
+        } else {
+            // NEW POSTS MODE: No cursor to fetch newest posts (like Following feed every 60s)
+            tracing::debug!(
                 user_did = %feed.did,
-                cursor = %cursor,
-                "Using cursor from database"
+                "New posts mode: fetching latest posts without cursor"
             );
-        }
+            None
+        };
 
-        // 2. Fetch timeline from AT Protocol
+        // 3. Fetch timeline from AT Protocol
         let timeline = self
             .fetch_timeline(feed, cursor, feed.max_posts_per_poll)
             .await
@@ -242,10 +278,19 @@ impl TimelineConsumerTask {
         }
 
         // 5. Update cursor and poll state in database
+        // IMPORTANT: Only save cursor in backfill mode
+        // In "new posts" mode (no cursor), we don't save the returned cursor
+        // This ensures we always fetch newest posts on the next poll
+        let cursor_to_save = if needs_backfill {
+            timeline.cursor.as_deref()
+        } else {
+            None
+        };
+
         timeline_storage::update_poll_state(
             &self.pool,
             &feed.did,
-            timeline.cursor.as_deref(),
+            cursor_to_save,
             indexed_count,
         )
         .await
@@ -254,7 +299,8 @@ impl TimelineConsumerTask {
         tracing::debug!(
             user_did = %feed.did,
             indexed = indexed_count,
-            new_cursor = ?timeline.cursor,
+            backfill_mode = needs_backfill,
+            saved_cursor = ?cursor_to_save,
             "Successfully completed poll"
         );
 
