@@ -46,8 +46,14 @@ timeline_feeds:
 
     # OPTIONAL: Maximum number of posts to index during initial backfill
     # - Default: 500 (recommended for most users, ~2-3 days of history)
-    # - Range: Any positive number (e.g., 1000, 5000)
-    # - Set to null for unlimited backfill (WARNING: may take hours and index thousands of posts!)
+    # - Range: 1-5000 (recommended maximum: 5000)
+    # - Set to null for unlimited backfill (WARNING: may take hours!)
+    #
+    # IMPORTANT: Should match CLEANUP_TASK_MAX_AGE!
+    # - CLEANUP_TASK_MAX_AGE=48h → backfill_limit: 500-1000 (recommended)
+    # - CLEANUP_TASK_MAX_AGE=7d  → backfill_limit: 3500-5000
+    # - Posts older than CLEANUP_TASK_MAX_AGE will be deleted anyway!
+    # - Higher backfill_limit than cleanup age = wasted startup time
     #
     # How it works:
     # - Backfill fetches older posts using cursor pagination
@@ -78,42 +84,35 @@ timeline_feeds:
 # - This config will eventually be replaced by web-based configuration
 # - Multiple users are polled IN PARALLEL for better performance
 
-# Example: Multiple users with different backfill limits
+# Example: Matching backfill_limit with CLEANUP_TASK_MAX_AGE
+#
+# IMPORTANT: Configure both together for optimal performance!
+#
+# Scenario 1: Default (2 days history)
+# .env: CLEANUP_TASK_MAX_AGE=48h
+# config.yml: backfill_limit: 500-1000
+# → Fast startup, small DB, 2 days of posts
+#
+# Scenario 2: Extended (1 week history)
+# .env: CLEANUP_TASK_MAX_AGE=7d
+# config.yml: backfill_limit: 3500-5000
+# → Moderate startup, medium DB, 1 week of posts
+#
+# Scenario 3: Archive (1 month history)
+# .env: CLEANUP_TASK_MAX_AGE=30d
+# config.yml: backfill_limit: null
+# → Slow startup, large DB, 1 month of posts
 #
 # timeline_feeds:
-#   # User 1: Standard setup with 500 post limit
+#   # Example: Standard 2-day feed
 #   - did: "did:plc:alice"
 #     feed_uri: "at://did:plc:feedgen/app.bsky.feed.generator/alice-filtered"
 #     name: "Alice's Feed"
-#     description: "Filtered timeline"
+#     description: "Filtered timeline (2 days)"
 #     oauth:
 #       access_token: "alice-token"
 #       pds_url: "https://bsky.social"
-#     backfill_limit: 500
+#     backfill_limit: 1000  # Matches CLEANUP_TASK_MAX_AGE=48h
 #     filters:
 #       blocked_reposters:
 #         - "did:plc:annoying-user"
-#
-#   # User 2: Extended history (5000 posts, ~2-3 weeks)
-#   - did: "did:plc:bob"
-#     feed_uri: "at://did:plc:feedgen/app.bsky.feed.generator/bob-extended"
-#     name: "Bob's Extended Feed"
-#     description: "More history"
-#     oauth:
-#       access_token: "bob-token"
-#       pds_url: "https://bsky.social"
-#     backfill_limit: 5000
-#     filters:
-#       blocked_reposters: []
-#
-#   # User 3: Complete timeline history (unlimited)
-#   - did: "did:plc:charlie"
-#     feed_uri: "at://did:plc:feedgen/app.bsky.feed.generator/charlie-complete"
-#     name: "Charlie's Complete Feed"
-#     description: "Full timeline archive"
-#     oauth:
-#       access_token: "charlie-token"
-#       pds_url: "https://bsky.social"
-#     backfill_limit: null  # WARNING: May take hours on first run!
-#     filters:
-#       blocked_reposters: []

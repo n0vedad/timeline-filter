@@ -69,6 +69,11 @@ impl TimelineFeed {
 
     /// Validate the configuration
     pub fn validate(&self) -> Result<()> {
+        self.validate_with_cleanup_age(None)
+    }
+
+    /// Validate the configuration with cleanup max age for backfill limit checking
+    pub fn validate_with_cleanup_age(&self, cleanup_max_age: Option<chrono::Duration>) -> Result<()> {
         // Validate DID format
         if !self.did.starts_with("did:") {
             anyhow::bail!("Invalid DID format: {}", self.did);
@@ -96,17 +101,86 @@ impl TimelineFeed {
             anyhow::bail!("max_posts_per_poll cannot exceed 100");
         }
 
-        // Validate backfill_limit and warn if unlimited
+        // Validate backfill_limit and check against cleanup_max_age
         if let Some(limit) = self.backfill_limit {
             if limit == 0 {
                 anyhow::bail!("backfill_limit must be greater than 0 or null for unlimited");
             }
+
+            // Check against cleanup_max_age if provided
+            if let Some(cleanup_age) = cleanup_max_age {
+                // Estimate posts per day (conservative: active users post ~20-100 times/day on timeline)
+                // We'll use 500 posts/day as a reasonable average for timeline polling
+                const ESTIMATED_POSTS_PER_DAY: f64 = 500.0;
+
+                let cleanup_days = cleanup_age.num_hours() as f64 / 24.0;
+                let estimated_posts_in_cleanup_window = (cleanup_days * ESTIMATED_POSTS_PER_DAY) as u32;
+
+                // Warn if backfill_limit significantly exceeds cleanup window
+                if limit > estimated_posts_in_cleanup_window * 2 {
+                    let wasted_posts = limit - estimated_posts_in_cleanup_window;
+                    tracing::warn!(
+                        user_did = %self.did,
+                        backfill_limit = limit,
+                        cleanup_max_age = ?cleanup_age,
+                        estimated_posts_in_cleanup_window = estimated_posts_in_cleanup_window,
+                        wasted_posts = wasted_posts,
+                        "backfill_limit significantly exceeds CLEANUP_TASK_MAX_AGE capacity! \
+                         Approximately {} posts will be indexed during backfill but immediately \
+                         eligible for cleanup. Consider reducing backfill_limit to ~{}-{} to match \
+                         your cleanup window ({:.1} days).",
+                        wasted_posts,
+                        estimated_posts_in_cleanup_window / 2,
+                        estimated_posts_in_cleanup_window,
+                        cleanup_days
+                    );
+                } else if limit > estimated_posts_in_cleanup_window {
+                    tracing::info!(
+                        user_did = %self.did,
+                        backfill_limit = limit,
+                        cleanup_max_age = ?cleanup_age,
+                        estimated_posts_in_cleanup_window = estimated_posts_in_cleanup_window,
+                        "backfill_limit slightly exceeds CLEANUP_TASK_MAX_AGE capacity. \
+                         This provides a small buffer but ~{} posts may be eligible for \
+                         immediate cleanup.",
+                        limit - estimated_posts_in_cleanup_window
+                    );
+                }
+            } else {
+                // No cleanup_max_age provided, use generic validation
+                const RECOMMENDED_MAX: u32 = 5000;
+                if limit > RECOMMENDED_MAX {
+                    tracing::warn!(
+                        user_did = %self.did,
+                        backfill_limit = limit,
+                        recommended_max = RECOMMENDED_MAX,
+                        "backfill_limit exceeds recommended maximum. \
+                         Posts older than CLEANUP_TASK_MAX_AGE will be deleted anyway. \
+                         Consider: backfill_limit ≈ (posts_per_day × cleanup_days). \
+                         Example: 500 posts/day × 2 days = 1000"
+                    );
+                }
+            }
         } else {
-            tracing::warn!(
-                user_did = %self.did,
-                "Unlimited backfill enabled! This may index thousands of posts and take hours. \
-                 Consider setting backfill_limit to a reasonable value (e.g., 500-5000)."
-            );
+            // Unlimited backfill
+            if let Some(cleanup_age) = cleanup_max_age {
+                let cleanup_days = cleanup_age.num_hours() as f64 / 24.0;
+                tracing::warn!(
+                    user_did = %self.did,
+                    cleanup_max_age = ?cleanup_age,
+                    "Unlimited backfill enabled! This may index thousands of posts and take hours. \
+                     Posts older than CLEANUP_TASK_MAX_AGE ({:.1} days) will be deleted anyway. \
+                     Consider setting backfill_limit to match your cleanup policy.",
+                    cleanup_days
+                );
+            } else {
+                tracing::warn!(
+                    user_did = %self.did,
+                    "Unlimited backfill enabled! This may index thousands of posts and take hours. \
+                     Posts older than CLEANUP_TASK_MAX_AGE will be deleted anyway. \
+                     Consider setting backfill_limit to match your cleanup policy (e.g., 500-5000)."
+                );
+            }
         }
 
         // Validate filters
@@ -211,11 +285,9 @@ fn default_backfill_limit() -> Option<u32> {
     Some(500)
 }
 
-/// Load TimelineFeeds from a file path
-impl TryFrom<String> for TimelineFeeds {
-    type Error = anyhow::Error;
-
-    fn try_from(path: String) -> Result<Self, Self::Error> {
+impl TimelineFeeds {
+    /// Load TimelineFeeds from a file path with optional cleanup_max_age for validation
+    pub fn load_from_path(path: &str, cleanup_max_age: Option<Duration>) -> Result<Self> {
         if path.is_empty() {
             // Return empty config if no path provided
             return Ok(TimelineFeeds {
@@ -223,24 +295,34 @@ impl TryFrom<String> for TimelineFeeds {
             });
         }
 
-        let content = std::fs::read(&path)
+        let content = std::fs::read(path)
             .with_context(|| format!("Failed to read timeline feeds config file: {}", path))?;
 
         let feeds: TimelineFeeds = serde_yaml::from_slice(&content)
             .with_context(|| format!("Failed to parse timeline feeds config: {}", path))?;
 
-        // Validate all feeds
+        // Validate all feeds with cleanup_max_age
         for (idx, feed) in feeds.timeline_feeds.iter().enumerate() {
-            feed.validate()
+            feed.validate_with_cleanup_age(cleanup_max_age)
                 .with_context(|| format!("Invalid configuration for feed #{} ({})", idx, feed.did))?;
         }
 
         tracing::info!(
             count = feeds.timeline_feeds.len(),
+            cleanup_max_age = ?cleanup_max_age,
             "Loaded timeline feeds configuration"
         );
 
         Ok(feeds)
+    }
+}
+
+/// Load TimelineFeeds from a file path (without cleanup validation)
+impl TryFrom<String> for TimelineFeeds {
+    type Error = anyhow::Error;
+
+    fn try_from(path: String) -> Result<Self, Self::Error> {
+        TimelineFeeds::load_from_path(&path, None)
     }
 }
 
@@ -367,5 +449,94 @@ mod tests {
             pds_url: "https://bsky.social".to_string(),
         };
         assert!(oauth_expired.is_expired());
+    }
+
+    #[test]
+    fn test_backfill_limit_validation_with_cleanup_age() {
+        // Test case 1: backfill_limit matches cleanup window (48h, ~1000 posts)
+        let feed_good = TimelineFeed {
+            did: "did:plc:test123".to_string(),
+            feed_uri: "at://did:plc:feedgen/app.bsky.feed.generator/test".to_string(),
+            name: "Test Feed".to_string(),
+            description: "A test feed".to_string(),
+            oauth: OAuthConfig {
+                access_token: "test_token".to_string(),
+                refresh_token: None,
+                expires_at: None,
+                pds_url: "https://bsky.social".to_string(),
+            },
+            filters: FilterConfig::default(),
+            poll_interval: None,
+            max_posts_per_poll: 50,
+            backfill_limit: Some(1000),
+        };
+
+        let cleanup_age_48h = Some(Duration::hours(48));
+        // Should not error, might log info but that's fine
+        assert!(feed_good.validate_with_cleanup_age(cleanup_age_48h).is_ok());
+
+        // Test case 2: backfill_limit WAY too high (10000 posts for 48h window)
+        let feed_excessive = TimelineFeed {
+            did: "did:plc:test456".to_string(),
+            feed_uri: "at://did:plc:feedgen/app.bsky.feed.generator/test2".to_string(),
+            name: "Test Feed 2".to_string(),
+            description: "A test feed with excessive backfill".to_string(),
+            oauth: OAuthConfig {
+                access_token: "test_token".to_string(),
+                refresh_token: None,
+                expires_at: None,
+                pds_url: "https://bsky.social".to_string(),
+            },
+            filters: FilterConfig::default(),
+            poll_interval: None,
+            max_posts_per_poll: 50,
+            backfill_limit: Some(10000),
+        };
+
+        // Should not error but will log warning (we can't test log output easily)
+        assert!(feed_excessive.validate_with_cleanup_age(cleanup_age_48h).is_ok());
+
+        // Test case 3: Unlimited backfill with cleanup age
+        let feed_unlimited = TimelineFeed {
+            did: "did:plc:test789".to_string(),
+            feed_uri: "at://did:plc:feedgen/app.bsky.feed.generator/test3".to_string(),
+            name: "Test Feed 3".to_string(),
+            description: "A test feed with unlimited backfill".to_string(),
+            oauth: OAuthConfig {
+                access_token: "test_token".to_string(),
+                refresh_token: None,
+                expires_at: None,
+                pds_url: "https://bsky.social".to_string(),
+            },
+            filters: FilterConfig::default(),
+            poll_interval: None,
+            max_posts_per_poll: 50,
+            backfill_limit: None,
+        };
+
+        // Should not error but will log warning
+        assert!(feed_unlimited.validate_with_cleanup_age(cleanup_age_48h).is_ok());
+
+        // Test case 4: Reasonable limit for 7 day cleanup
+        let feed_7d = TimelineFeed {
+            did: "did:plc:test999".to_string(),
+            feed_uri: "at://did:plc:feedgen/app.bsky.feed.generator/test4".to_string(),
+            name: "Test Feed 4".to_string(),
+            description: "A test feed with 7 day cleanup".to_string(),
+            oauth: OAuthConfig {
+                access_token: "test_token".to_string(),
+                refresh_token: None,
+                expires_at: None,
+                pds_url: "https://bsky.social".to_string(),
+            },
+            filters: FilterConfig::default(),
+            poll_interval: None,
+            max_posts_per_poll: 50,
+            backfill_limit: Some(3500),
+        };
+
+        let cleanup_age_7d = Some(Duration::days(7));
+        // Should be fine - 3500 is reasonable for 7 days
+        assert!(feed_7d.validate_with_cleanup_age(cleanup_age_7d).is_ok());
     }
 }

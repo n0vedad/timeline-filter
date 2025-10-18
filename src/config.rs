@@ -59,7 +59,8 @@ impl Config {
         let timeline_feeds: Option<TimelineFeeds> = if timeline_feeds_path.is_empty() {
             None
         } else {
-            Some(timeline_feeds_path.try_into()?)
+            // Pass cleanup_max_age for validation
+            Some(TimelineFeeds::load_from_path(&timeline_feeds_path, Some(*cleanup_task_max_age.as_ref()))?)
         };
 
         let timeline_consumer_enable: TaskEnable =
