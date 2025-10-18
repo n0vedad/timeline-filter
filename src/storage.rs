@@ -16,6 +16,7 @@ pub mod model {
         pub uri: String,
         pub indexed_at: i64,
         pub score: i32,
+        pub is_repost: bool,
     }
 
     #[derive(Clone, FromRow)]
@@ -45,12 +46,13 @@ pub async fn feed_content_upsert(pool: &StoragePool, feed_content: &FeedContent)
     } else {
         // Insert new post
         let now = Utc::now();
-        sqlx::query("INSERT INTO feed_content (feed_id, uri, indexed_at, updated_at, score) VALUES (?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO feed_content (feed_id, uri, indexed_at, updated_at, score, is_repost) VALUES (?, ?, ?, ?, ?, ?)")
             .bind(&feed_content.feed_id)
             .bind(&feed_content.uri)
             .bind(feed_content.indexed_at)
             .bind(now)
             .bind(feed_content.score)
+            .bind(feed_content.is_repost)
             .execute(pool)
             .await
             .context("failed to insert feed content record")?;

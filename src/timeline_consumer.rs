@@ -237,14 +237,7 @@ impl TimelineConsumerTask {
 
         // 3. Filter posts based on user's filter config
         let filtered = self.filter_posts(&timeline.feed, &feed.filters);
-
-        tracing::info!(
-            user_did = %feed.did,
-            total = timeline.feed.len(),
-            filtered = filtered.len(),
-            blocked = timeline.feed.len() - filtered.len(),
-            "Processed timeline posts"
-        );
+        let blocked_count = timeline.feed.len() - filtered.len();
 
         // 4. Index filtered posts into feed_content table
         let mut new_posts = 0;
@@ -281,10 +274,10 @@ impl TimelineConsumerTask {
                 }
             };
 
-            // Determine which URI to store:
+            // Determine which URI to store and whether it's a repost:
             // - If it's a repost (has reason with URI), store the repost URI
             // - Otherwise, store the original post URI
-            let uri_to_store = if let Some(reason) = &post_view.reason {
+            let (uri_to_store, is_repost) = if let Some(reason) = &post_view.reason {
                 if reason.reason_type == "app.bsky.feed.defs#reasonRepost" {
                     if let Some(ref repost_uri) = reason.uri {
                         reposts += 1;
@@ -294,19 +287,19 @@ impl TimelineConsumerTask {
                             reposter = %reason.by.did,
                             "Indexing repost"
                         );
-                        repost_uri.clone()
+                        (repost_uri.clone(), true)
                     } else {
                         tracing::warn!(
                             post_uri = %post_view.post.uri,
                             "Repost reason missing URI, falling back to post URI"
                         );
-                        post_view.post.uri.clone()
+                        (post_view.post.uri.clone(), false)
                     }
                 } else {
-                    post_view.post.uri.clone()
+                    (post_view.post.uri.clone(), false)
                 }
             } else {
-                post_view.post.uri.clone()
+                (post_view.post.uri.clone(), false)
             };
 
             match feed_content_upsert(
@@ -316,6 +309,7 @@ impl TimelineConsumerTask {
                     uri: uri_to_store,
                     indexed_at,
                     score: 1,
+                    is_repost,
                 },
             )
             .await
@@ -342,6 +336,7 @@ impl TimelineConsumerTask {
                 &feed.did,
                 timeline.cursor.as_deref(),
                 new_posts, // Only count NEW posts, not duplicates
+                blocked_count as i32,
             )
             .await
             .context("Failed to update backfill poll state")?;
@@ -360,25 +355,34 @@ impl TimelineConsumerTask {
                 &feed.did,
                 None, // Never save cursor in new posts mode
                 new_posts, // Only count NEW posts, not duplicates
+                blocked_count as i32,
             )
             .await
             .context("Failed to update new posts poll state")?;
         }
 
-        // Get cumulative total for logging
-        let cumulative_total = timeline_storage::get_total_posts_indexed(&self.pool, &feed.did)
+        // Get feed stats for logging
+        let stats = timeline_storage::get_feed_stats(&self.pool, &feed.feed_uri)
             .await
-            .unwrap_or(0);
+            .unwrap_or(timeline_storage::FeedStats {
+                total_posts: 0,
+                total_reposts: 0,
+                total_blocked: 0,
+            });
 
         tracing::info!(
             user_did = %feed.did,
             mode = if is_backfill { "backfill" } else { "new_posts" },
-            new = new_posts,
-            duplicates = updated_posts,
-            reposts = reposts,
-            total = total_processed,
-            cumulative = cumulative_total,
-            "Completed poll"
+            "Poll: fetched={}, blocked={}, indexed={} (new={}, reposts={}, dupes={}), total_db={} (reposts={}, blocked={})",
+            timeline.feed.len(),
+            blocked_count,
+            total_processed,
+            new_posts,
+            reposts,
+            updated_posts,
+            stats.total_posts,
+            stats.total_reposts,
+            stats.total_blocked,
         );
 
         Ok(())
@@ -830,6 +834,8 @@ mod tests {
                         display_name: None,
                         avatar: None,
                     },
+                    uri: Some("at://did:plc:blocked/app.bsky.feed.repost/xyz".to_string()),
+                    cid: Some("repost_cid".to_string()),
                     indexed_at: "2025-10-17T00:00:00Z".to_string(),
                 }),
                 reply: None,
@@ -856,6 +862,8 @@ mod tests {
                         display_name: None,
                         avatar: None,
                     },
+                    uri: Some("at://did:plc:allowed/app.bsky.feed.repost/abc".to_string()),
+                    cid: Some("repost_cid2".to_string()),
                     indexed_at: "2025-10-17T00:00:00Z".to_string(),
                 }),
                 reply: None,

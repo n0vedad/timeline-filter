@@ -273,12 +273,54 @@ pub async fn get_total_posts_indexed(pool: &StoragePool, user_did: &str) -> Resu
     Ok(result.flatten().unwrap_or(0))
 }
 
+/// Get feed statistics for a user
+pub async fn get_feed_stats(pool: &StoragePool, feed_uri: &str) -> Result<FeedStats> {
+    // Count total posts and reposts
+    let (total_posts, total_reposts) = sqlx::query_as::<_, (i64, i64)>(
+        r#"
+        SELECT
+            COUNT(*) as total_posts,
+            SUM(CASE WHEN is_repost = 1 THEN 1 ELSE 0 END) as total_reposts
+        FROM feed_content
+        WHERE feed_id = ?
+        "#,
+    )
+    .bind(feed_uri)
+    .fetch_one(pool)
+    .await?;
+
+    // Get blocked count from timeline_poll_cursor
+    let user_did = feed_uri.split('/').nth(2).unwrap_or("");
+    let blocked_count = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT blocked_posts_count FROM timeline_poll_cursor WHERE user_did = ?",
+    )
+    .bind(user_did)
+    .fetch_optional(pool)
+    .await?
+    .flatten()
+    .unwrap_or(0);
+
+    Ok(FeedStats {
+        total_posts,
+        total_reposts,
+        total_blocked: blocked_count,
+    })
+}
+
+/// Feed statistics
+pub struct FeedStats {
+    pub total_posts: i64,
+    pub total_reposts: i64,
+    pub total_blocked: i64,
+}
+
 /// Update poll state after successfully polling a user's timeline
 pub async fn update_poll_state(
     pool: &StoragePool,
     user_did: &str,
     cursor: Option<&str>,
     posts_indexed: i32,
+    blocked_posts: i32,
 ) -> Result<()> {
     let now = Utc::now().to_rfc3339();
 
@@ -299,7 +341,8 @@ pub async fn update_poll_state(
             SET last_cursor = ?,
                 last_poll_at = ?,
                 posts_indexed = ?,
-                total_posts_indexed = total_posts_indexed + ?
+                total_posts_indexed = total_posts_indexed + ?,
+                blocked_posts_count = blocked_posts_count + ?
             WHERE user_did = ?
             "#,
         )
@@ -307,6 +350,7 @@ pub async fn update_poll_state(
         .bind(&now)
         .bind(posts_indexed)
         .bind(posts_indexed)
+        .bind(blocked_posts)
         .bind(user_did)
         .execute(pool)
         .await?;
@@ -315,8 +359,8 @@ pub async fn update_poll_state(
         sqlx::query(
             r#"
             INSERT INTO timeline_poll_cursor (
-                user_did, last_cursor, last_poll_at, posts_indexed, total_posts_indexed
-            ) VALUES (?, ?, ?, ?, ?)
+                user_did, last_cursor, last_poll_at, posts_indexed, total_posts_indexed, blocked_posts_count
+            ) VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(user_did)
@@ -324,6 +368,7 @@ pub async fn update_poll_state(
         .bind(&now)
         .bind(posts_indexed)
         .bind(posts_indexed)
+        .bind(blocked_posts)
         .execute(pool)
         .await?;
     }
@@ -549,7 +594,7 @@ mod tests {
         assert!(should);
 
         // Update poll state
-        update_poll_state(&pool, "did:plc:test123", Some("cursor123"), 10)
+        update_poll_state(&pool, "did:plc:test123", Some("cursor123"), 10, 0)
             .await
             .unwrap();
 
