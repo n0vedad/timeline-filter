@@ -68,6 +68,38 @@ async fn sync_user_config(pool: &StoragePool, feed: &TimelineFeed) -> Result<()>
     Ok(())
 }
 
+/// Update OAuth tokens in database after refresh
+pub async fn update_tokens(
+    pool: &StoragePool,
+    user_did: &str,
+    access_token: &str,
+    refresh_token: Option<&str>,
+    token_expires_at: Option<&str>,
+) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+
+    sqlx::query(
+        r#"
+        UPDATE timeline_user_config
+        SET access_token = ?,
+            refresh_token = ?,
+            token_expires_at = ?,
+            updated_at = ?
+        WHERE did = ?
+        "#,
+    )
+    .bind(access_token)
+    .bind(refresh_token)
+    .bind(token_expires_at)
+    .bind(&now)
+    .bind(user_did)
+    .execute(pool)
+    .await
+    .with_context(|| format!("Failed to update tokens for {}", user_did))?;
+
+    Ok(())
+}
+
 /// Sync a user's filters to database
 async fn sync_user_filters(pool: &StoragePool, user_did: &str, filters: &FilterConfig) -> Result<()> {
     // Delete existing filters for this user

@@ -78,7 +78,7 @@ impl TimelineConsumerTask {
     }
 
     /// Run the background polling loop
-    pub async fn run_background(&self) -> Result<()> {
+    pub async fn run_background(mut self) -> Result<()> {
         tracing::info!(
             user_count = self.config.timeline_feeds.len(),
             "TimelineConsumerTask started"
@@ -89,31 +89,34 @@ impl TimelineConsumerTask {
         }
 
         loop {
-            tokio::select! {
-                () = self.cancellation_token.cancelled() => {
-                    tracing::info!("TimelineConsumerTask cancelled");
-                    break;
-                },
-                () = self.poll_cycle() => {},
+            // Check for cancellation
+            if self.cancellation_token.is_cancelled() {
+                tracing::info!("TimelineConsumerTask cancelled");
+                break;
             }
+
+            // Run poll cycle
+            self.poll_cycle().await;
         }
 
         Ok(())
     }
 
     /// Execute one polling cycle for all users
-    async fn poll_cycle(&self) {
-        for timeline_feed in &self.config.timeline_feeds.timeline_feeds {
-            let interval = timeline_feed
-                .poll_interval_duration()
+    async fn poll_cycle(&mut self) {
+        // Clone feed list to avoid borrow checker issues
+        let mut feeds = self.config.timeline_feeds.timeline_feeds.clone();
+
+        for feed in &mut feeds {
+            let interval = feed.poll_interval_duration()
                 .unwrap_or(self.config.default_poll_interval);
 
             // Check if enough time has passed since last poll
-            match timeline_storage::should_poll(&self.pool, &timeline_feed.did, interval).await {
+            match timeline_storage::should_poll(&self.pool, &feed.did, interval).await {
                 Ok(true) => {
-                    if let Err(e) = self.poll_user_timeline(timeline_feed).await {
+                    if let Err(e) = self.poll_user_timeline(feed).await {
                         tracing::error!(
-                            user_did = %timeline_feed.did,
+                            user_did = %feed.did,
                             error = ?e,
                             "Failed to poll timeline"
                         );
@@ -122,13 +125,13 @@ impl TimelineConsumerTask {
                 Ok(false) => {
                     // Not time to poll yet
                     tracing::trace!(
-                        user_did = %timeline_feed.did,
+                        user_did = %feed.did,
                         "Skipping poll - not enough time elapsed"
                     );
                 }
                 Err(e) => {
                     tracing::error!(
-                        user_did = %timeline_feed.did,
+                        user_did = %feed.did,
                         error = ?e,
                         "Failed to check poll status"
                     );
@@ -136,17 +139,23 @@ impl TimelineConsumerTask {
             }
         }
 
+        // Update feeds back (in case tokens were refreshed)
+        self.config.timeline_feeds.timeline_feeds = feeds;
+
         // Sleep briefly before next cycle to avoid tight loop
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
     }
 
     /// Poll timeline for a single user
-    async fn poll_user_timeline(&self, feed: &TimelineFeed) -> Result<()> {
+    async fn poll_user_timeline(&mut self, feed: &mut TimelineFeed) -> Result<()> {
         tracing::debug!(
             user_did = %feed.did,
             feed_uri = %feed.feed_uri,
             "Polling timeline"
         );
+
+        // 0. Check if token needs refresh and refresh if necessary
+        self.ensure_valid_token(feed).await?;
 
         // 1. Get last cursor from database
         let cursor = timeline_storage::get_cursor(&self.pool, &feed.did)
@@ -326,6 +335,139 @@ impl TimelineConsumerTask {
         Ok(timeline)
     }
 
+    /// Ensure the access token is valid, refresh if necessary
+    async fn ensure_valid_token(&self, feed: &mut TimelineFeed) -> Result<()> {
+        // Check if token is expired or will expire soon (within 5 minutes)
+        if let Some(ref expires_at) = feed.oauth.expires_at {
+            let expires = chrono::DateTime::parse_from_rfc3339(expires_at)
+                .context("Failed to parse token expiration")?;
+            let now = chrono::Utc::now();
+            let buffer = chrono::Duration::minutes(5);
+
+            if expires.signed_duration_since(now) < buffer {
+                tracing::info!(
+                    user_did = %feed.did,
+                    expires_at = %expires_at,
+                    "Access token expired or expiring soon, refreshing"
+                );
+                self.refresh_token(feed).await?;
+            }
+        } else {
+            // No expiration time set, assume token might be expired and try to refresh if we have refresh_token
+            if feed.oauth.refresh_token.is_some() {
+                tracing::warn!(
+                    user_did = %feed.did,
+                    "No token expiration set, attempting refresh as precaution"
+                );
+                self.refresh_token(feed).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Refresh the OAuth access token using the refresh token
+    async fn refresh_token(&self, feed: &mut TimelineFeed) -> Result<()> {
+        let refresh_token = feed.oauth.refresh_token.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No refresh token available"))?;
+
+        tracing::info!(
+            user_did = %feed.did,
+            pds_url = %feed.oauth.pds_url,
+            "Refreshing OAuth token"
+        );
+
+        let url = format!("{}/xrpc/com.atproto.server.refreshSession", feed.oauth.pds_url);
+
+        let response = self
+            .http_client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", refresh_token))
+            .send()
+            .await
+            .context("Failed to send refresh token request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_else(|_| "(failed to read body)".to_string());
+            anyhow::bail!("Token refresh failed: {} - {}", status, body);
+        }
+
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct RefreshResponse {
+            access_jwt: String,
+            refresh_jwt: String,
+            did: String,
+            /// User handle - we don't store this as timeline config uses static YAML
+            /// In a full session manager this would be updated like Bluesky does
+            handle: String,
+            #[serde(default)]
+            did_doc: Option<serde_json::Value>,
+        }
+
+        let refresh_response: RefreshResponse = response
+            .json()
+            .await
+            .context("Failed to parse refresh response")?;
+
+        // Validate DID matches (security check - like Bluesky does)
+        if refresh_response.did != feed.did {
+            anyhow::bail!(
+                "DID mismatch during token refresh: expected {}, got {}",
+                feed.did,
+                refresh_response.did
+            );
+        }
+
+        tracing::debug!(
+            user_did = %feed.did,
+            handle = %refresh_response.handle,
+            "Token refresh successful"
+        );
+
+        // Update feed with new tokens
+        feed.oauth.access_token = refresh_response.access_jwt.clone();
+        feed.oauth.refresh_token = Some(refresh_response.refresh_jwt.clone());
+
+        // Update PDS URL from didDoc if present (allows PDS migration like Bluesky)
+        if let Some(did_doc) = refresh_response.did_doc {
+            if let Some(pds_url) = extract_pds_endpoint(&did_doc) {
+                tracing::info!(
+                    user_did = %feed.did,
+                    old_pds = %feed.oauth.pds_url,
+                    new_pds = %pds_url,
+                    "Updating PDS URL from DID document"
+                );
+                feed.oauth.pds_url = pds_url;
+            }
+        }
+
+        // Set expiration to 2 hours from now (typical AT Protocol token lifetime)
+        let expires_at = (chrono::Utc::now() + chrono::Duration::hours(2))
+            .to_rfc3339();
+        feed.oauth.expires_at = Some(expires_at.clone());
+
+        // Update database with new tokens
+        timeline_storage::update_tokens(
+            &self.pool,
+            &feed.did,
+            &feed.oauth.access_token,
+            feed.oauth.refresh_token.as_deref(),
+            Some(&expires_at),
+        )
+        .await
+        .context("Failed to update tokens in database")?;
+
+        tracing::info!(
+            user_did = %feed.did,
+            expires_at = %expires_at,
+            "Successfully refreshed OAuth token"
+        );
+
+        Ok(())
+    }
+
     /// Filter posts based on user's filter configuration
     fn filter_posts<'a>(
         &self,
@@ -364,6 +506,30 @@ impl TimelineConsumerTask {
             })
             .collect()
     }
+}
+
+/// Extract PDS endpoint URL from DID document
+/// Follows the same logic as Bluesky's getPdsEndpoint() function
+fn extract_pds_endpoint(did_doc: &serde_json::Value) -> Option<String> {
+    // Look for service with id "#atproto_pds" and type "AtprotoPersonalDataServer"
+    let services = did_doc.get("service")?.as_array()?;
+
+    for service in services {
+        let id = service.get("id")?.as_str()?;
+        let service_type = service.get("type")?.as_str()?;
+        let endpoint = service.get("serviceEndpoint")?.as_str()?;
+
+        if (id.ends_with("#atproto_pds") || id == "#atproto_pds")
+            && service_type == "AtprotoPersonalDataServer"
+        {
+            // Validate URL format
+            if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
+                return Some(endpoint.to_string());
+            }
+        }
+    }
+
+    None
 }
 
 // AT Protocol Response Types
